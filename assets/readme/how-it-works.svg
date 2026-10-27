@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+  <title id="title">How skillvm works</title>
+  <desc id="desc">An installed skill folder and an upstream commit have the same git tree id, fdecbcd, which proves which version is installed. Every change then goes through four steps: check against upstream, snapshot the current folder, swap the new version in, and validate it or restore the old folder.</desc>
+
+  <rect width="1200" height="460" rx="24" fill="#0E1116"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <g id="installed" transform="translate(48 48)">
+      <rect width="440" height="148" rx="16" fill="#151A21" stroke="#2A2F37" stroke-width="1.5"/>
+      <text x="28" y="42" font-size="18" letter-spacing="2" fill="#8B949E">INSTALLED FOLDER</text>
+      <text x="28" y="84" font-size="22" fill="#F2EFE8">~/.claude/skills/astropy</text>
+      <text x="28" y="122" font-size="22" fill="#3FB950">tree fdecbcd</text>
+    </g>
+
+    <g id="match" transform="translate(600 122)">
+      <line x1="-112" y1="0" x2="-40" y2="0" stroke="#3FB950" stroke-width="2"/>
+      <line x1="40" y1="0" x2="112" y2="0" stroke="#3FB950" stroke-width="2"/>
+      <circle r="30" fill="#3FB950" fill-opacity="0.14" stroke="#3FB950" stroke-width="2"/>
+      <text y="11" text-anchor="middle" font-size="32" font-weight="700" fill="#3FB950">=</text>
+      <text y="66" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" fill="#F2EFE8">exact match</text>
+    </g>
+
+    <g id="upstream" transform="translate(712 48)">
+      <rect width="440" height="148" rx="16" fill="#151A21" stroke="#2A2F37" stroke-width="1.5"/>
+      <text x="28" y="42" font-size="18" letter-spacing="2" fill="#8B949E">UPSTREAM COMMIT</text>
+      <text x="28" y="84" font-size="22" fill="#F2EFE8">a92663a:skills/astropy</text>
+      <text x="28" y="122" font-size="22" fill="#3FB950">tree fdecbcd</text>
+    </g>
+  </g>
+
+  <text x="48" y="256" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" fill="#8B949E">Then every install, update and rollback goes through the same four steps:</text>
+
+  <g id="steps" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <g transform="translate(48 280)">
+      <rect width="252" height="140" rx="16" fill="#151A21" stroke="#2A2F37" stroke-width="1.5"/>
+      <text x="24" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#3FB950">01</text>
+      <text x="24" y="72" font-size="26" font-weight="700" fill="#F2EFE8">Check</text>
+      <text x="24" y="102" font-size="20" fill="#B8B4AC">compare with the</text>
+      <text x="24" y="126" font-size="20" fill="#B8B4AC">upstream branch</text>
+    </g>
+    <g transform="translate(330 280)">
+      <rect width="252" height="140" rx="16" fill="#151A21" stroke="#2A2F37" stroke-width="1.5"/>
+      <text x="24" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#3FB950">02</text>
+      <text x="24" y="72" font-size="26" font-weight="700" fill="#F2EFE8">Snapshot</text>
+      <text x="24" y="102" font-size="20" fill="#B8B4AC">copy and verify</text>
+      <text x="24" y="126" font-size="20" fill="#B8B4AC">before writing</text>
+    </g>
+    <g transform="translate(612 280)">
+      <rect width="252" height="140" rx="16" fill="#151A21" stroke="#2A2F37" stroke-width="1.5"/>
+      <text x="24" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#3FB950">03</text>
+      <text x="24" y="72" font-size="26" font-weight="700" fill="#F2EFE8">Swap in</text>
+      <text x="24" y="102" font-size="20" fill="#B8B4AC">stage the new files,</text>
+      <text x="24" y="126" font-size="20" fill="#B8B4AC">move into place</text>
+    </g>
+    <g transform="translate(894 280)">
+      <rect width="252" height="140" rx="16" fill="#151A21" stroke="#2A2F37" stroke-width="1.5"/>
+      <text x="24" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#3FB950">04</text>
+      <text x="24" y="72" font-size="26" font-weight="700" fill="#F2EFE8">Validate</text>
+      <text x="24" y="102" font-size="20" fill="#B8B4AC">wrong fingerprint?</text>
+      <text x="24" y="126" font-size="20" fill="#B8B4AC">restore the old one</text>
+    </g>
+    <g font-size="22" fill="#8B949E" text-anchor="middle">
+      <text x="315" y="358">›</text>
+      <text x="597" y="358">›</text>
+      <text x="879" y="358">›</text>
+    </g>
+  </g>
+</svg>

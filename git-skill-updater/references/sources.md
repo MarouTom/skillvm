@@ -97,7 +97,7 @@ git -C "$CACHE" log --oneline "$INSTALLED..$BRANCH" -- "$SKILL_PATH"
 
 `--mirror` means there's no work tree, and `fetch` keeps every branch and tag current. `--filter=blob:none` downloads only the commit and folder structure, and file contents are fetched later on demand by `git archive` and `git show`. Fingerprint matching needs only the structure, so even a repo with 150+ skills clones in a second or two, at a few MB.
 
-If `$INSTALLED` isn't in the cache (for example after a force-push upstream), say so and fall back to comparing fingerprints.
+**Upstream history rewrites.** If `$INSTALLED` is no longer reachable from `$BRANCH` (after a force-push, rebase, or squash upstream), re-match it: find the upstream commit whose tree equals the recorded fingerprint (see "Finding the installed commit when it's unknown") and record that commit instead. Check for reachability with `git merge-base --is-ancestor "$INSTALLED" "$BRANCH"`, not existence, because a force-pushed-away commit can stay in the cache for weeks. If no commit matches, the installed version is gone from upstream: record `commit: null` and treat the skill as locally modified, so it's only replaced when the user agrees. `check.py` reports re-matches without saving them; the next `apply.py` run saves them and logs a `rematch` line in the history.
 
 Fetch each repo once per run, even when many skills share it.
 

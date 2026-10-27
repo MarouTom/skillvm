@@ -230,6 +230,7 @@ The skill's frontmatter uses only fields both agents accept, and it passes Codex
 - ✅ **New skills and updates** that add or change scripts, `allowed-tools`, or hooks are flagged for review.
 - ✅ **Upstream archives** are extracted with Python's `tarfile` "data" filter, which rejects paths and links that escape the skill folder.
 - ✅ **Symlinked skills** (your development copies) are never modified.
+- ✅ **Upstream history rewrites** (force-push, rebase, squash) are handled. The installed version is re-matched by fingerprint, and if it no longer exists upstream, the skill is treated as locally modified and replaced only when you agree.
 - ✅ **No password prompts.** Git never waits for a password: a private or missing repo fails at once and is reported as unreachable.
 - ✅ **One folder of state** per agent (`~/.claude/skill-versions/`, `~/.codex/skill-versions/`). Delete it to start over; your skills aren't affected.
 

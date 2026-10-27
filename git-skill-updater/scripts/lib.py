@@ -76,7 +76,9 @@ def setup(a):
     elif tail == ".agents":
         PREFERRED = (".agents", ".codex")
     if os.environ.get("GSU_STORE"):
+        # a custom store belongs to the skills folder it is used with, so a copied or moved store keeps working
         STORE = os.path.abspath(os.path.expanduser(os.environ["GSU_STORE"]))
+        HOME_SKILLS = skills_dir
     else:
         STORE = store_for(skills_dir)
         if os.path.dirname(STORE) == os.path.dirname(skills_dir):
@@ -414,6 +416,33 @@ def find_match(cache, branch, name, fp, extra_dirs=(), index=None):
     elif current_dirs:
         current = min(current_dirs, key=path_rank)
     return (match[0] if match else None), (match[1] if match else None), current, dirs
+
+
+def on_branch(cache, commit, branch):
+    """True if `commit` is reachable from `branch`. A force-pushed-away commit can still sit in the cache."""
+    r = subprocess.run(["git", "-C", cache, "merge-base", "--is-ancestor", commit, branch],
+                       capture_output=True, env=GIT_ENV)
+    return r.returncode == 0
+
+
+def refresh_commit(cache, branch, name, e):
+    """Keep e["commit"] valid after upstream rewrote its history (force-push, rebase, squash).
+
+    If the recorded commit is no longer on the branch, find the upstream commit whose tree equals the
+    recorded fingerprint and record that instead. Changes `e` in place; the caller decides whether to save.
+    Returns "ok", "rematched" (a new commit was found), or "lost" (none matches: treated as locally
+    modified from then on, so it is never overwritten without asking)."""
+    if not e.get("commit") or on_branch(cache, e["commit"], branch):
+        return "ok"
+    commit, at_path, current, _ = find_match(cache, branch, name, e["fingerprint"],
+                                             extra_dirs=[e.get("installed_path"), e.get("path")])
+    if commit:
+        e["commit"], e["installed_path"] = commit, at_path
+        if current:
+            e["path"] = current
+        return "rematched"
+    e["commit"], e["likely"] = None, True
+    return "lost"
 
 
 def find_version(cache, branch, path, want):

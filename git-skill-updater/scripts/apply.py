@@ -24,6 +24,7 @@ class Run:
     def __init__(self, a, reg, skills_dir):
         self.a, self.reg, self.skills_dir = a, reg, skills_dir
         self.rows, self.skipped, self.failed, self.uptodate, self.pruned = [], [], [], 0, 0
+        self.rematched, self.lost = [], []
         self.decision = []
 
     def key(self, name):
@@ -48,8 +49,23 @@ class Run:
         err = lib.install_folder(staged, self.folder(name), expected_fp)
         return sid, err
 
+    def refresh(self, cache, branch, name, e):
+        """Re-match the recorded commit if upstream rewrote history; saved unless this is a dry run."""
+        state = lib.refresh_commit(cache, branch, name, e)
+        if state != "ok":
+            (self.rematched if state == "rematched" else self.lost).append(name)
+            if not self.a.dry_run:
+                lib.save_registry(self.reg)
+                lib.append_history({"skill": self.key(name), "action": "rematch", "result": state,
+                                    "commit": lib.short(e.get("commit"))})
+        return state
+
     def report(self, mode):
         nc = [("Up to date", self.uptodate), ("Skipped", self.skipped), ("Failed", self.failed)]
+        if self.rematched:
+            nc.append(("Re-matched after upstream rewrote its history", self.rematched))
+        if self.lost:
+            nc.append(("Recorded version no longer upstream (treated as locally modified)", self.lost))
         if self.pruned:
             nc.append(("Old snapshots pruned", self.pruned))
         print(lib.render_report("available" if self.a.dry_run else "changes",
@@ -86,6 +102,7 @@ def cmd_update(r):
         except lib.GitError:
             r.skipped.append("%s (source unreachable)" % name)
             continue
+        r.refresh(cache, branch, name, e)
         latest_tree = lib.tree_at(cache, branch, e["path"])
         if not latest_tree:
             r.skipped.append("%s (removed upstream)" % name)
@@ -99,10 +116,16 @@ def cmd_update(r):
             r.uptodate += 1
             continue
         if modified and name not in overwrite:
-            r.skipped.append("%s (local edits kept)" % name)
-            r.decision.append("%s has local edits. Show them with: check.py --diff %s. "
-                              "To replace them (they stay in a snapshot): apply.py update %s --overwrite-local %s"
-                              % (name, name, name, name))
+            if name in r.lost:
+                r.skipped.append("%s (installed version no longer upstream)" % name)
+                r.decision.append("%s: the upstream history was rewritten and the installed version is no longer "
+                                  "in it. To replace it with the latest (the current files stay in a snapshot): "
+                                  "apply.py update %s --overwrite-local %s" % (name, name, name))
+            else:
+                r.skipped.append("%s (local edits kept)" % name)
+                r.decision.append("%s has local edits. Show them with: check.py --diff %s. "
+                                  "To replace them (they stay in a snapshot): apply.py update %s --overwrite-local %s"
+                                  % (name, name, name, name))
             continue
         latest = lib.last_commit(cache, branch, e["path"])
         oldp = e.get("installed_path", e["path"])
@@ -150,6 +173,7 @@ def cmd_rollback(r):
     if e.get("source"):
         try:
             cache, branch = lib.fetch_source(r.reg, e["source"])
+            r.refresh(cache, branch, name, e)
         except lib.GitError:
             pass
 

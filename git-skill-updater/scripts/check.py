@@ -20,7 +20,7 @@ def check(a, reg, skills_dir):
     targets, missing = lib.resolve_targets(a.targets, skills_dir)
     if missing:
         lib.die("no installed skill matches: " + "; ".join(missing))
-    rows, res = [], {"up_to_date": [], "locally_modified": [], "pinned": [], "unknown_source": [],
+    rows, res = [], {"rematched": [], "lost": [], "up_to_date": [], "locally_modified": [], "pinned": [], "unknown_source": [],
                      "source_unreachable": [], "removed_upstream": [], "not_registered": []}
     unreachable = set()
     for name in targets:
@@ -42,6 +42,9 @@ def check(a, reg, skills_dir):
             unreachable.add(e["source"])
             res["source_unreachable"].append(name)
             continue
+        state = lib.refresh_commit(cache, branch, name, e)  # in memory only: check never saves
+        if state != "ok":
+            res[state].append(name)
         latest_tree = lib.tree_at(cache, branch, e["path"])
         modified = e.get("commit") is None or lib.fingerprint(folder) != e["fingerprint"]
         if not latest_tree:
@@ -78,6 +81,10 @@ def check(a, reg, skills_dir):
                                        if reg["skills"][lib.skill_key(skills_dir, n)].get("note") else n
                                        for n in res["unknown_source"]]),
                    ("Source unreachable", res["source_unreachable"])]
+    if res["rematched"]:
+        not_changed.append(("Re-matched after upstream rewrote its history (saved on the next update)", res["rematched"]))
+    if res["lost"]:
+        not_changed.append(("Recorded version no longer upstream (treated as locally modified)", res["lost"]))
     if res["removed_upstream"]:
         not_changed.append(("Removed upstream", res["removed_upstream"]))
     if res["not_registered"]:
@@ -110,6 +117,8 @@ def history(a, reg, skills_dir):
         print("No upstream source recorded.")
         return
     cache, branch = lib.fetch_source(reg, e["source"], a.no_fetch)
+    if lib.refresh_commit(cache, branch, name, e) == "rematched":
+        print("_The upstream history was rewritten; the installed version was re-matched by fingerprint._\n")
     args = ["-C", cache, "log", "-n", str(a.n), "--format=%H %cs %s", branch]
     if lib.gp(e["path"]):
         args += ["--", e["path"]]

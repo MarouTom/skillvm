@@ -21,7 +21,7 @@
   <a href="#use-the-scripts-directly">Scripts</a>
 </p>
 
-**skillvm** is a skill for **Claude Code** and **Codex** that keeps your other skills up to date. Just say *"update my skills."* It finds where each skill came from on GitHub, shows you what changed, and updates them. If an update breaks something, you can go back to the old version. It works with the skills you already have, so there's nothing to reinstall.
+**skillvm** is a skill for **Claude Code** and **Codex** that keeps all your skills up to date. Just say *"update my skills."* It finds where each skill came from on GitHub, shows you what changed, and updates them. If an update breaks something, you can go back to the old version. It works with the skills you already have, so there's nothing to reinstall.
 
 - **Knows where each skill came from**, even ones you copied months ago.
 - **Shows what changed** in every update, and flags changes to scripts or permissions with **⚠ review**.

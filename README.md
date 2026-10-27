@@ -21,15 +21,13 @@
   <a href="#use-the-scripts-directly">Scripts</a>
 </p>
 
-You've probably installed skills by copying folders from GitHub into `~/.claude/skills/` or `~/.codex/skills/`. From then on, nothing tracks them. You can't tell which version you have, whether there's a newer one, or whether you've edited it, and once you copy a new version over, the old one is gone.
+**skillvm** is a skill for **Claude Code** and **Codex** that keeps your other skills up to date. Just say *"update my skills."* It finds where each skill came from on GitHub, shows you what changed, and updates them. If an update breaks something, you can go back to the old version. It works with the skills you already have, so there's nothing to reinstall.
 
-**skillvm** is a skill for **Claude Code** and **Codex** that fixes this. Think `nvm` or `pyenv`, for agent skills. Ask your agent *"update my skills"* and it handles the rest. It works with the skills you already have, so there's nothing to reinstall.
-
-- **Finds every source.** It works out which GitHub repo each installed skill came from, even ones copied months ago, and proves it with an exact match against an upstream commit.
-- **Shows what's new.** It gives one report per run, with versions, commits, line counts, and **⚠ review** flags for changed scripts, tool permissions and hooks.
-- **Undoes anything.** You can roll back to any snapshot, or to any commit, tag or version ever published upstream.
-- **Respects your edits.** Local changes are never overwritten without your answer, and when you do overwrite them, they're kept in a snapshot.
-- **Finds new skills.** *"Find skills for data management"* searches GitHub and ranks what it finds by stars.
+- **Knows where each skill came from**, even ones you copied months ago.
+- **Shows what changed** in every update, and flags changes to scripts or permissions with **⚠ review**.
+- **Lets you go back** to any earlier version.
+- **Leaves your edits alone** unless you say otherwise.
+- **Finds new skills.** Ask for *"skills for data management"* and it searches GitHub for you.
 
 ## What a run looks like
 
@@ -39,9 +37,9 @@ Every run ends with the same report, so results are easy to scan and compare:
 >
 > | # | Skill | Action | From | To | Source |
 > |---|---|---|---|---|---|
-> | 1 | chart-maker | updated | 1.2 · `3f9c2a1` · 2026-09-14 | 1.4 · `8b7e4d0` · 2026-10-20 | acme-labs/agent-skills |
-> | 2 | pdf-toolkit | updated | — · `c41d9e7` · 2026-08-30 | — · `5a2f0b3` · 2026-10-11 | acme-labs/agent-skills |
-> | 3 | blog-post | installed | — | 2.0 · `e77c215` · 2026-10-02 | jdoe/writing-skills |
+> | 1 | chart-maker | updated | 1.2 · `3f9c2a1` · 2026-09-14 | 1.4 · `8b7e4d0` · 2026-10-20 | MarouTom/agent-skills |
+> | 2 | pdf-toolkit | updated | — · `c41d9e7` · 2026-08-30 | — · `5a2f0b3` · 2026-10-11 | MarouTom/agent-skills |
+> | 3 | blog-post | installed | — | 2.0 · `e77c215` · 2026-10-02 | MarouTom/writing-skills |
 >
 > **What changed**
 > 1. **chart-maker**: 3 commits · 5 files (+212 −48)
@@ -89,7 +87,7 @@ Just ask, in plain language:
 > 💭 *Check my skills for updates.*<br>
 > 💭 *Update everything.* · *Update chart-maker and pdf-toolkit.* · *Update all the writing-\* skills.*<br>
 > 💭 *Find skills for spreadsheet cleanup.* · *Tell me more about number 2.* · *Install 1 and 3.*<br>
-> 💭 *Install the meeting-notes skill from acme-labs/agent-skills.*<br>
+> 💭 *Install the skillvm skill from MarouTom/skillvm.*<br>
 > 💭 *What changed in chart-maker?* · *Show me the previous versions of pdf-toolkit.*<br>
 > 💭 *Undo the last update to sql-helper.* · *Go back to chart-maker 1.2.* · *Keep chart-maker at this version.*
 
@@ -100,8 +98,8 @@ Or pass arguments: `/skillvm …` in Claude Code, `$skillvm …` in Codex.
 --check                                   what's outdated? changes nothing
 all                                       update everything (previews first, asks once)
 chart-maker pdf-toolkit                   update specific skills
---install acme-labs/agent-skills [skill …]
---install https://github.com/jdoe/writing-skills/tree/main/skills/blog-post
+--install MarouTom/skillvm [skill …]
+--install https://github.com/MarouTom/skillvm/tree/main/skillvm
 --history chart-maker                     local snapshots + every upstream version
 --rollback chart-maker [1.2 | <commit> | <tag> | <snapshot> | <date>]
 --pin chart-maker [<version>]             "update all" leaves it alone
@@ -126,7 +124,7 @@ You get two kinds of versions: **local snapshots** (what this machine has had) a
 > |---|---|---|---|---|
 > | `20261027T090345Z` | 1.2 | `3f9c2a1` | pre-update | 2026-10-27 09:03 |
 >
-> **Upstream versions** · acme-labs/agent-skills · `skills/chart-maker` · newest first
+> **Upstream versions** · MarouTom/agent-skills · `skills/chart-maker` · newest first
 >
 > | Commit | Date | Version | Tags | Subject |
 > |---|---|---|---|---|
@@ -158,7 +156,7 @@ After a rollback, the agent asks whether to **pin** the skill, so *"update all"*
 >
 > | # | Skill | Action | From | To | Source |
 > |---|---|---|---|---|---|
-> | 1 | chart-maker | rolled back | 1.4 · `8b7e4d0` · 2026-10-20 | 1.1 · `7e5a1c8` · 2026-08-02 | acme-labs/agent-skills |
+> | 1 | chart-maker | rolled back | 1.4 · `8b7e4d0` · 2026-10-20 | 1.1 · `7e5a1c8` · 2026-08-02 | MarouTom/agent-skills |
 >
 > **What changed**
 > 1. **chart-maker**: restored upstream `7e5a1c8`
@@ -185,8 +183,8 @@ skillvm searches GitHub (repos tagged `agent-skills` or `claude-skills`, plus th
 >
 > | # | Skill | What it does | Repo | ★ | Updated | Notes |
 > |---|---|---|---|---|---|---|
-> | 1 | **csv-wrangler** | Clean, deduplicate, and reshape CSV and Excel files. | acme-labs/agent-skills | 12,480 | 2026-10-14 | v2.1 · 3 scripts |
-> | 2 | **sheet-auditor** | Find broken formulas, mixed types, and outliers in spreadsheets. | jdoe/data-skills | 2,315 | 2026-09-30 | v1.0 |
+> | 1 | **csv-wrangler** | Clean, deduplicate, and reshape CSV and Excel files. | MarouTom/agent-skills | 12,480 | 2026-10-14 | v2.1 · 3 scripts |
+> | 2 | **sheet-auditor** | Find broken formulas, mixed types, and outliers in spreadsheets. | MarouTom/data-skills | 2,315 | 2026-09-30 | v1.0 |
 > | 3 | **tidy-tables** | Turn messy tables into tidy, analysis-ready data. | dataworks-lab/tidy-skills | 640 | 2026-08-12 | 1 script |
 > | … | | | | | | |
 
@@ -200,7 +198,7 @@ skillvm searches GitHub (repos tagged `agent-skills` or `claude-skills`, plus th
 > - *"List the outliers in the sales sheet and suggest which ones are typos."*
 >
 > **What it installs:** 4 files, no scripts, no special tool permissions.<br>
-> **Source:** jdoe/data-skills · ★ 2,315 · MIT · last updated 2026-09-30
+> **Source:** MarouTom/data-skills · ★ 2,315 · MIT · last updated 2026-09-30
 
 > 💭 *Install 1 and 3.*
 
@@ -263,7 +261,7 @@ python3 $S/check.py --history chart-maker         # local snapshots + upstream v
 python3 $S/check.py --diff chart-maker            # your local edits
 python3 $S/apply.py update all --dry-run          # preview
 python3 $S/apply.py update all
-python3 $S/apply.py install acme-labs/agent-skills meeting-notes
+python3 $S/apply.py install MarouTom/skillvm skillvm
 python3 $S/apply.py rollback chart-maker 1.2
 python3 $S/apply.py pin chart-maker
 ```

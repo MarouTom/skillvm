@@ -3,6 +3,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/MarouTom/skillvm/stargazers"><img src="https://img.shields.io/github/stars/MarouTom/skillvm?style=flat-square&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/MarouTom/skillvm/releases/latest"><img src="https://img.shields.io/github/v/release/MarouTom/skillvm?style=flat-square&color=0969DA" alt="Latest release"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/MarouTom/skillvm?style=flat-square" alt="License: MIT"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Claude_Code-skill-D97757?style=flat-square" alt="Claude Code skill"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Codex-skill-10A37F?style=flat-square" alt="Codex skill"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.8+"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/pip_dependencies-none-2EA44F?style=flat-square" alt="No pip dependencies"></a>
+</p>
+
+<p align="center">
   <a href="#install">Install</a> ·
   <a href="#use">Use</a> ·
   <a href="#examples">Examples</a> ·

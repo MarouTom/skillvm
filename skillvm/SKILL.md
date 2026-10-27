@@ -3,7 +3,7 @@ name: skillvm
 description: Version manager for agent skills (Claude Code, Codex). Searches GitHub for skills on a topic, installs skills from GitHub, checks for and applies updates, shows version history, and rolls back or pins skills. Use when the user asks to find, install, update, check for updates, roll back, pin, or see the history of skills, e.g. "find skills for data management", "install skills from github.com/owner/repo", "update my skills", "go back to the previous version of pdf-toolkit".
 allowed-tools: Read Bash Glob Grep
 metadata:
-  version: "1.1.0"
+  version: "1.0.0"
   short-description: "Install, update, and roll back skills from GitHub"
   source: "https://github.com/MarouTom/skillvm"
 ---

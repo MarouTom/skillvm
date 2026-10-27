@@ -12,8 +12,11 @@ Layout of the version store:
   cache/          blobless mirror clones of source repos
   tmp/            staging area
 """
+import atexit
+import concurrent.futures
 import datetime
 import difflib
+import itertools
 import fnmatch
 import json
 import os
@@ -21,7 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
+import threading
 import time
 import urllib.parse
 
@@ -119,12 +122,21 @@ def ensure_store():
 GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", GIT_ASKPASS="echo")
 
 
-def git(*args, inp=None, check=True, binary=False):
-    r = subprocess.run(["git", *args], input=inp, capture_output=True, text=not binary, env=GIT_ENV)
+def git(*args, inp=None, check=True, binary=False, env=None):
+    r = subprocess.run(["git", *args], input=inp, capture_output=True, text=not binary, env=env or GIT_ENV)
     if check and r.returncode:
         err = r.stderr if not binary else r.stderr.decode("utf-8", "replace")
         raise GitError("git %s: %s" % (" ".join(args[:3]), err.strip()))
     return r.stdout
+
+
+def parallel(fn, items, workers=8):
+    """fn over items on a thread pool (the work is git and network, so threads overlap well). Keeps order."""
+    items = list(items)
+    if len(items) < 2:
+        return [fn(x) for x in items]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
+        return list(pool.map(fn, items))
 
 
 def gp(path):
@@ -143,17 +155,42 @@ def short(commit):
 
 # --- fingerprints and frontmatter -------------------------------------------
 
+_fp_repo = []
+_fp_ids = itertools.count()
+_fp_lock = threading.Lock()
+
+
+def _fingerprint_repo():
+    """One scratch object store per process, shared by every fingerprint (each gets its own index file)."""
+    with _fp_lock:
+        if not _fp_repo:
+            idx = os.path.join(STORE, "tmp", "fp-%d.git" % os.getpid())
+            shutil.rmtree(idx, ignore_errors=True)
+            git("init", "-q", "--bare", "--template=", idx)
+            os.makedirs(os.path.join(idx, "info"), exist_ok=True)
+            with open(os.path.join(idx, "info", "exclude"), "w") as f:
+                f.write(FP_EXCLUDES)
+            atexit.register(shutil.rmtree, idx, True)
+            _fp_repo.append(idx)
+    return _fp_repo[0]
+
+
 def fingerprint(folder):
-    """Git tree id of a folder's contents: comparable with `git rev-parse <commit>:<path>`."""
-    idx = os.path.join(STORE, "tmp", "fp-%d.git" % os.getpid())
-    shutil.rmtree(idx, ignore_errors=True)
-    git("init", "-q", "--bare", idx)
-    with open(os.path.join(idx, "info", "exclude"), "w") as f:
-        f.write(FP_EXCLUDES)
-    git("--git-dir=" + idx, "--work-tree=" + folder, "add", "-A")
-    tree = git("--git-dir=" + idx, "write-tree").strip()
-    shutil.rmtree(idx, ignore_errors=True)
-    return tree
+    """Git tree id of a folder's contents: comparable with `git rev-parse <commit>:<path>`. Thread-safe."""
+    idx = _fingerprint_repo()
+    env = dict(GIT_ENV, GIT_INDEX_FILE=os.path.join(idx, "index-%d" % next(_fp_ids)))
+    try:
+        git("--git-dir=" + idx, "--work-tree=" + folder, "add", "-A", env=env)
+        return git("--git-dir=" + idx, "write-tree", env=env).strip()
+    finally:
+        if os.path.exists(env["GIT_INDEX_FILE"]):
+            os.remove(env["GIT_INDEX_FILE"])
+
+
+def fingerprints(folders):
+    """{folder: fingerprint} for many folders at once."""
+    folders = list(dict.fromkeys(folders))
+    return dict(zip(folders, parallel(fingerprint, folders)))
 
 
 def parse_frontmatter(text):
@@ -200,9 +237,91 @@ def read_meta(folder):
         return parse_frontmatter(f.read())
 
 
+# --- reading a blobless cache ------------------------------------------------
+# Caches hold every commit and tree but download file contents (blobs) only when needed. Git fetches a
+# missing blob in its own network round trip, and some commands (git archive) fetch every blob in the repo,
+# so blobs are always fetched here in one batch, and only the ones that are needed.
+
+NO_LAZY_ENV = dict(GIT_ENV, GIT_NO_LAZY_FETCH="1")  # git >= 2.44: report missing objects instead of fetching
+
+
+def cat_batch(cache, objs, env=None):
+    """Contents of many objects (ids or `<rev>:<path>` specs) from one git process; None for missing ones."""
+    if not objs:
+        return []
+    out = git("-C", cache, "cat-file", "--batch", inp="".join(o + "\n" for o in objs).encode(),
+              binary=True, env=env)
+    res, pos = [], 0
+    for _ in objs:
+        nl = out.index(b"\n", pos)
+        head = out[pos:nl].split()
+        if len(head) != 3 or head[-1] in (b"missing", b"ambiguous"):
+            res.append(None)
+            pos = nl + 1
+            continue
+        size = int(head[2])
+        res.append(out[nl + 1:nl + 1 + size])
+        pos = nl + 1 + size + 1
+    return res
+
+
+_version = []
+
+
+def _git_version():
+    if not _version:
+        m = re.search(r"(\d+)\.(\d+)", git("--version"))
+        _version.append((int(m.group(1)), int(m.group(2))) if m else (0, 0))
+    return _version[0]
+
+
+def prefetch(cache, oids):
+    """Download the blobs among `oids` that the cache lacks, in one request."""
+    oids = list(dict.fromkeys(o for o in oids if o))
+    if not oids:
+        return
+    if _git_version() >= (2, 44):
+        checks = git("-C", cache, "cat-file", "--batch-check", inp="".join(o + "\n" for o in oids),
+                     env=NO_LAZY_ENV).splitlines()
+        oids = [o for o, c in zip(oids, checks) if c.endswith("missing")]
+    for i in range(0, len(oids), 500):
+        # what git itself runs to fill in a partial clone; a failure here leaves git to fetch lazily
+        git("-C", cache, "-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q", "origin", "--no-tags",
+            "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", *oids[i:i + 500], check=False)
+
+
+def tree_entries(data):
+    """Parse a raw git tree object into [(mode, name, oid)]."""
+    out, pos = [], 0
+    while pos < len(data):
+        sp = data.index(b" ", pos)
+        nul = data.index(b"\0", sp)
+        out.append((data[pos:sp].decode(), data[sp + 1:nul].decode("utf-8", "replace"), data[nul + 1:nul + 21].hex()))
+        pos = nul + 21
+    return out
+
+
+def files_at(cache, pairs, filename="SKILL.md"):
+    """Text of `filename` in each (rev, folder) pair, or None. Reads trees first (always in the cache), then
+    fetches only the distinct blobs still missing, so 40 versions of a SKILL.md cost one round trip."""
+    trees = cat_batch(cache, [spec(rev, path) for rev, path in pairs])
+    oids = []
+    for t in trees:
+        oids.append(next((oid for mode, name, oid in tree_entries(t) if name == filename and mode.startswith("100")),
+                         None) if t else None)
+    prefetch(cache, oids)
+    uniq = list(dict.fromkeys(o for o in oids if o))
+    blobs = dict(zip(uniq, cat_batch(cache, uniq)))
+    return [blobs[o].decode("utf-8", "replace") if o and blobs.get(o) is not None else None for o in oids]
+
+
+def metas_at(cache, pairs):
+    """Parsed SKILL.md frontmatter for each (rev, folder) pair."""
+    return [parse_frontmatter(t or "") for t in files_at(cache, pairs)]
+
+
 def meta_at(cache, commit, path):
-    text = git("-C", cache, "show", "%s:%s" % (commit, (gp(path) + "/SKILL.md").lstrip("/")), check=False)
-    return parse_frontmatter(text)
+    return metas_at(cache, [(commit, path)])[0]
 
 
 def github_urls(text):
@@ -325,19 +444,62 @@ def cache_dir(key):
     return os.path.join(STORE, "cache", key.replace("/", "__"))
 
 
+REFSPECS = ("+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")  # not refs/pull/*: GitHub has one per PR
+
+
+def _set_refspecs(cache):
+    git("-C", cache, "config", "--replace-all", "remote.origin.fetch", REFSPECS[0])
+    git("-C", cache, "config", "--add", "remote.origin.fetch", REFSPECS[1])
+
+
+def _drop_mirror_refs(cache):
+    """Caches made by older versions were --mirror clones that also fetched every pull request."""
+    git("-C", cache, "config", "--unset", "remote.origin.mirror", check=False)
+    _set_refspecs(cache)
+    extra = [r for r in git("-C", cache, "for-each-ref", "--format=%(refname)").split()
+             if not r.startswith(("refs/heads/", "refs/tags/"))]
+    if extra:
+        git("-C", cache, "update-ref", "--stdin", inp="".join("delete %s\n" % r for r in extra))
+
+
 def fetch(key, url, no_fetch=False):
-    """Blobless mirror clone in the cache; fetched at most once per process. Returns (cache, default_branch)."""
-    if key in _fetched:
-        return _fetched[key]
+    """Blobless bare clone (branches and tags) in the cache; fetched at most once per process.
+    Returns (cache, default_branch)."""
+    got = _fetched.get(key)
+    if isinstance(got, Exception):
+        raise got
+    if got:
+        return got
     cache = cache_dir(key)
-    if os.path.exists(os.path.join(cache, "HEAD")):
-        if not no_fetch:
-            git("-C", cache, "fetch", "--quiet", "--prune", "origin")
-    else:
-        git("clone", "--quiet", "--mirror", "--filter=blob:none", url, cache)
-    branch = git("-C", cache, "symbolic-ref", "--short", "HEAD").strip()
+    try:
+        if os.path.exists(os.path.join(cache, "HEAD")):
+            if git("-C", cache, "config", "--get", "remote.origin.mirror", check=False).strip() == "true":
+                _drop_mirror_refs(cache)
+            if not no_fetch:
+                git("-C", cache, "fetch", "--quiet", "--prune", "origin")
+        else:
+            git("clone", "--quiet", "--bare", "--filter=blob:none", url, cache)
+            _set_refspecs(cache)
+        branch = git("-C", cache, "symbolic-ref", "--short", "HEAD").strip()
+    except GitError as e:
+        _fetched[key] = e
+        raise
     _fetched[key] = (cache, branch)
     return _fetched[key]
+
+
+def fetch_all(sources, no_fetch=False):
+    """Fetch many {key: url} sources in parallel. Failures are remembered and raised by fetch() later."""
+    def one(kv):
+        try:
+            fetch(kv[0], kv[1], no_fetch)
+        except GitError:
+            pass
+    parallel(one, [(k, u) for k, u in sources.items() if k not in _fetched])
+
+
+def fetch_sources(reg, keys, no_fetch=False):
+    fetch_all({k: reg["sources"][k]["url"] for k in keys if k in reg["sources"]}, no_fetch)
 
 
 def fetch_source(reg, key, no_fetch=False):
@@ -376,8 +538,20 @@ def preferred_dirs(dirs):
     return sorted(best.values(), key=lambda d: os.path.basename(d))
 
 
+_trees = {}
+
+
 def tree_at(cache, rev, path):
-    return git("-C", cache, "rev-parse", "-q", "--verify", spec(rev, path), check=False).strip() or None
+    """Tree id of `path` at `rev`, or None. The first call per revision lists all its folders at once."""
+    if (cache, rev) not in _trees:
+        table = {".": git("-C", cache, "rev-parse", "-q", "--verify", rev + "^{tree}", check=False).strip() or None}
+        if table["."]:
+            for l in git("-C", cache, "ls-tree", "-r", "-d", "-z", "--full-tree", rev).split("\0"):
+                if l:
+                    info, p = l.split("\t", 1)
+                    table[p] = info.split()[2]
+        _trees[(cache, rev)] = table
+    return _trees[(cache, rev)].get(gp(path) or ".")
 
 
 def commit_date(cache, commit):
@@ -432,11 +606,14 @@ def find_match(cache, branch, name, fp, extra_dirs=(), index=None):
     return (match[0] if match else None), (match[1] if match else None), current, dirs
 
 
+_branch_commits = {}
+
+
 def on_branch(cache, commit, branch):
     """True if `commit` is reachable from `branch`. A force-pushed-away commit can still sit in the cache."""
-    r = subprocess.run(["git", "-C", cache, "merge-base", "--is-ancestor", commit, branch],
-                       capture_output=True, env=GIT_ENV)
-    return r.returncode == 0
+    if (cache, branch) not in _branch_commits:
+        _branch_commits[(cache, branch)] = set(git("-C", cache, "rev-list", branch, check=False).split())
+    return commit in _branch_commits[(cache, branch)]
 
 
 def refresh_commit(cache, branch, name, e):
@@ -463,31 +640,49 @@ def find_version(cache, branch, path, want):
     args = ["-C", cache, "log", "--format=%H", branch]
     if gp(path):
         args += ["--", path]
-    for c in git(*args).split():
-        if meta_at(cache, c, path)["version"] == want:
-            return c
-    return None
+    commits = git(*args).split()
+    return next((c for c, m in zip(commits, metas_at(cache, [(c, path) for c in commits])) if m["version"] == want), None)
 
 
-# --- GitHub search (unauthenticated: ~10 requests/minute) --------------------
+# --- GitHub search (10 requests/minute, 30 with GH_TOKEN or GITHUB_TOKEN) -----
 
-_last_call = [0.0]
+_rate = {"remaining": None, "reset": 0.0}
+
+
+def _curl_search(url):
+    """One request. The token goes in on stdin, never on the command line."""
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    config = 'header = "Authorization: Bearer %s"\n' % token if token else ""
+    r = subprocess.run(["curl", "-sS", "--max-time", "20", "-K", "-", "-D", "-", "-H", "Accept: application/vnd.github+json",
+                        "-A", "skillvm", "-w", "\n%{http_code}", url], input=config, capture_output=True, text=True)
+    out, _, code = r.stdout.rpartition("\n")
+    head, _, body = out.replace("\r\n", "\n").partition("\n\n")
+    hdr = dict((k.strip().lower(), v.strip()) for k, _, v in (l.partition(":") for l in head.splitlines()[1:]))
+    if hdr.get("x-ratelimit-remaining", "").isdigit():
+        _rate["remaining"] = int(hdr["x-ratelimit-remaining"])
+        _rate["reset"] = float(hdr.get("x-ratelimit-reset") or 0)
+    return r.returncode, code, body
 
 
 def gh_search(kind, q, per_page=3):
-    """GitHub search via curl (system certificates; Python's own TLS often lacks them on macOS)."""
-    wait = 6.5 - (time.time() - _last_call[0])
-    if wait > 0:
-        time.sleep(wait)
-    _last_call[0] = time.time()
+    """GitHub search via curl (system certificates; Python's own TLS often lacks them on macOS).
+    Runs at full speed while the rate limit allows, and waits (up to a minute) only when it is used up."""
     url = "https://api.github.com/search/%s?q=%s&per_page=%d%s" % (
         kind, urllib.parse.quote(q), per_page, "&sort=stars" if kind == "repositories" else "")
-    r = subprocess.run(["curl", "-sS", "--max-time", "20", "-H", "Accept: application/vnd.github+json",
-                        "-A", "skillvm", "-w", "\n%{http_code}", url], capture_output=True, text=True)
-    body, _, code = r.stdout.rpartition("\n")
-    if code in ("403", "429"):
-        raise UserError("GitHub search rate limit reached; try again in a minute")
-    if r.returncode or code != "200":
+    for attempt in (1, 2):
+        if _rate["remaining"] == 0:
+            wait = _rate["reset"] - time.time() + 1
+            if wait > 65:
+                raise UserError("GitHub search rate limit reached; try again in a minute")
+            if wait > 0:
+                time.sleep(wait)
+            _rate["remaining"] = None
+        rc, code, body = _curl_search(url)
+        if code not in ("403", "429"):
+            break
+        if attempt == 2 or _rate["remaining"] != 0:
+            raise UserError("GitHub search rate limit reached; try again in a minute")
+    if rc or code != "200":
         return []
     try:
         return json.loads(body).get("items", [])
@@ -543,37 +738,46 @@ def take_snapshot(key, folder, reason, entry):
     return sid
 
 
-def _extract(proc_stdout, dest):
-    with tarfile.open(fileobj=proc_stdout, mode="r|") as tf:
-        if hasattr(tarfile, "data_filter"):
-            tf.extractall(dest, filter="data")
-        else:
-            tf.extractall(dest)
-
-
 def stage_upstream(cache, commit, path, name):
-    """Extract <commit>:<path> into tmp/new-<name> and return that folder."""
-    tmp = os.path.join(STORE, "tmp")
-    stage = os.path.join(tmp, "stage-%s-%d" % (snap_dirname(name), os.getpid()))
-    new = os.path.join(tmp, "new-%s-%d" % (snap_dirname(name), os.getpid()))
-    shutil.rmtree(stage, ignore_errors=True)
+    """Write the files of <commit>:<path> into tmp/new-<name> and return that folder.
+    Fetches just this folder's missing blobs in one request (git archive would fetch the whole repo's)."""
+    new = os.path.join(STORE, "tmp", "new-%s-%d" % (snap_dirname(name), os.getpid()))
     shutil.rmtree(new, ignore_errors=True)
-    os.makedirs(stage)
-    args = ["git", "-C", cache, "archive", "--format=tar", commit] + ([path] if gp(path) else [])
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=GIT_ENV)
+    entries = []
+    for l in git("-C", cache, "ls-tree", "-r", "-z", spec(commit, path)).split("\0"):
+        if l:
+            info, p = l.split("\t", 1)
+            mode, kind, oid = info.split()
+            parts = p.split("/")
+            if p.startswith("/") or any(x in ("", ".", "..", ".git") for x in parts):
+                raise GitError("unsafe path in %s:%s: %s" % (short(commit), path, p))
+            entries.append((mode, kind, oid, p))
+    blobs = [e for e in entries if e[1] == "blob"]
+    prefetch(cache, [e[2] for e in blobs])
+    data = cat_batch(cache, [e[2] for e in blobs])
+    os.makedirs(new)
     try:
-        _extract(proc.stdout, stage)
-    finally:
-        proc.stdout.close()
-        err = proc.stderr.read().decode("utf-8", "replace")
-        if proc.wait():
-            shutil.rmtree(stage, ignore_errors=True)
-            raise GitError("git archive %s:%s failed: %s" % (short(commit), path, err.strip()))
-    if gp(path):
-        os.rename(os.path.join(stage, path), new)
-        shutil.rmtree(stage, ignore_errors=True)
-    else:
-        os.rename(stage, new)
+        for (mode, _, oid, p), content in zip(blobs, data):
+            if content is None:
+                raise GitError("could not download %s from %s" % (p, short(commit)))
+            dest = os.path.join(new, *p.split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if mode == "120000":
+                target = content.decode("utf-8", "surrogateescape")
+                inside = os.path.normpath(os.path.join(os.path.dirname(p), target))
+                if os.path.isabs(target) or inside == ".." or inside.startswith("../"):
+                    raise GitError("unsafe link in %s:%s: %s -> %s" % (short(commit), path, p, target))
+                os.symlink(target, dest)
+                continue
+            with open(dest, "wb") as f:
+                f.write(content)
+            os.chmod(dest, 0o755 if mode == "100755" else 0o644)
+        for mode, kind, oid, p in entries:
+            if kind == "commit":  # a submodule: an empty folder, as git checkout leaves it
+                os.makedirs(os.path.join(new, *p.split("/")), exist_ok=True)
+    except BaseException:
+        shutil.rmtree(new, ignore_errors=True)
+        raise
     return new
 
 
@@ -672,8 +876,8 @@ def change_summary(cache, old, oldp, new, newp, branch=None):
             tests += st != "D"
         elif code:
             flags.append("%s `%s`" % ({"A": "adds", "D": "removes"}.get(st, "changes"), f))
-    m_old = meta_at(cache, old, oldp) if old else parse_frontmatter("")
-    m_new = meta_at(cache, new, newp)
+    metas = metas_at(cache, [(new, newp)] + ([(old, oldp)] if old else []))
+    m_new, m_old = metas[0], metas[1] if old else parse_frontmatter("")
     if old and m_old["allowed-tools"] != m_new["allowed-tools"]:
         flags.append("allowed-tools `%s` → `%s`" % (m_old["allowed-tools"] or "—", m_new["allowed-tools"] or "—"))
     elif not old and m_new["allowed-tools"]:

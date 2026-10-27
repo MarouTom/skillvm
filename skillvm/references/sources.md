@@ -77,7 +77,9 @@ CACHE="$STORE/cache/${OWNER}__${REPO}"
 if [ -f "$CACHE/HEAD" ]; then
   git -C "$CACHE" fetch --quiet --prune origin
 else
-  git clone --quiet --mirror --filter=blob:none "$URL" "$CACHE"
+  git clone --quiet --bare --filter=blob:none "$URL" "$CACHE"
+  git -C "$CACHE" config --replace-all remote.origin.fetch '+refs/heads/*:refs/heads/*'
+  git -C "$CACHE" config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
 fi
 BRANCH=${BRANCH:-$(git -C "$CACHE" symbolic-ref --short HEAD)}
 LATEST=$(git -C "$CACHE" rev-parse "$BRANCH")
@@ -95,7 +97,16 @@ Commits between installed and latest, for this skill only:
 git -C "$CACHE" log --oneline "$INSTALLED..$BRANCH" -- "$SKILL_PATH"
 ```
 
-`--mirror` means there's no work tree, and `fetch` keeps every branch and tag current. `--filter=blob:none` downloads only the commit and folder structure, and file contents are fetched later on demand by `git archive` and `git show`. Fingerprint matching needs only the structure, so even a repo with 150+ skills clones in a second or two, at a few MB.
+`--bare` means there's no work tree, and the two refspecs make `fetch` keep every branch and tag current. (Not `--mirror`: on GitHub that also fetches one ref per pull request, which can be hundreds. Caches made by older versions as mirrors are converted on their next fetch.) `--filter=blob:none` downloads only the commit and folder structure. Fingerprint matching needs only the structure, so even a repo with 150+ skills clones in a second or two, at a few MB.
+
+File contents are fetched when needed, and always in batches. Git fetches a missing blob in its own network round trip, and `git archive` fetches every blob in the repo, so the scripts first list the blobs they need from the trees (`git ls-tree`, or `git cat-file --batch` on tree objects), then fetch the missing ones in one request:
+
+```bash
+git -C "$CACHE" -c fetch.negotiationAlgorithm=noop fetch -q origin --no-tags --no-write-fetch-head \
+    --recurse-submodules=no --filter=blob:none <blob-id> ...
+```
+
+and read them with `git cat-file --batch`. With git 2.44+, `GIT_NO_LAZY_FETCH=1 git cat-file --batch-check` tells which blobs are missing without fetching them.
 
 **Upstream history rewrites.** If `$INSTALLED` is no longer reachable from `$BRANCH` (after a force-push, rebase, or squash upstream), re-match it: find the upstream commit whose tree equals the recorded fingerprint (see "Finding the installed commit when it's unknown") and record that commit instead. Check for reachability with `git merge-base --is-ancestor "$INSTALLED" "$BRANCH"`, not existence, because a force-pushed-away commit can stay in the cache for weeks. If no commit matches, the installed version is gone from upstream: record `commit: null` and treat the skill as locally modified, so it's only replaced when the user agrees. `check.py` reports re-matches without saving them; the next `apply.py` run saves them and logs a `rematch` line in the history.
 

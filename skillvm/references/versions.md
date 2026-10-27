@@ -101,17 +101,15 @@ If the frontmatter `name:` differs from the folder name, keep the folder name an
 
 ## Staging an upstream version
 
+The scripts list the folder with `git ls-tree -r -z "$COMMIT:$SKILL_PATH"` (`"$COMMIT^{tree}"` when the whole repo is one skill), fetch its missing blobs in one request (see "`git` sources" in sources.md), and write each file from `git cat-file --batch`: mode `100755` as executable, `120000` as a symlink. They don't use `git archive`, because on a blobless cache it downloads every file in the repo, not just this folder.
+
+Upstream content is untrusted. Paths that are absolute or contain `..` or `.git`, and links that point outside the folder, stop the install with an error.
+
+Without the scripts, a plain checkout gives the same files:
+
 ```bash
-STAGE="$STORE/tmp/stage-$NAME"
-rm -rf "$STAGE" "$STORE/tmp/new-$NAME" && mkdir -p "$STAGE"
-git -C "$CACHE" archive "$COMMIT" "$SKILL_PATH" | tar -x -C "$STAGE"
-mv "$STAGE/$SKILL_PATH" "$STORE/tmp/new-$NAME"
-rm -rf "$STAGE"
+git -C "$CACHE" archive "$COMMIT" "$SKILL_PATH" | tar -x -C "$STAGE"   # slow on a blobless cache
 ```
-
-Upstream archives are untrusted. The scripts extract them with Python's `tarfile` "data" filter (Python 3.12+), which rejects absolute paths, `..` and links that point outside the folder.
-
-When `$SKILL_PATH` is `.` (the whole repo is one skill), use `git -C "$CACHE" archive "$COMMIT" | tar -x -C "$STORE/tmp/new-$NAME"` instead.
 
 `$COMMIT` can be a commit hash, a tag, or a branch. To install a version given by its `version:` field, search for it:
 

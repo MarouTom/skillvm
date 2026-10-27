@@ -9,7 +9,7 @@ Install, update, and roll back skills from GitHub, with proof of where each one 
 [![Codex](https://img.shields.io/badge/Codex-skill-10A37F?style=flat-square)](#-install)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white)](#-install)
 [![Dependencies](https://img.shields.io/badge/pip_dependencies-none-2EA44F?style=flat-square)](#-install)
-[![Version](https://img.shields.io/badge/version-1.0.0-0969DA?style=flat-square)](skillvm/SKILL.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-0969DA?style=flat-square)](skillvm/SKILL.md)
 
 [Install](#-install) · [Use](#-use) · [Find skills](#example-find-new-skills-learn-about-one-install-it) · [Versions &amp; restore](#example-list-every-version-of-a-skill-then-restore-one) · [Example report](#-what-you-see) · [How it works](#-how-it-works) · [Safety](#-safety) · [Scripts](#-use-the-scripts-directly)
 
@@ -277,13 +277,13 @@ The skill's frontmatter uses only fields both agents accept, and it passes Codex
 2. **🧬 Proof by fingerprint.** A skill folder's fingerprint is its git tree hash, the same id git gives that folder inside a repo. If an installed folder's fingerprint equals the tree at some upstream commit, that's exactly the version installed. That's a proof, not a guess by name. If the repo has the skill but no commit matches, you edited it or it came from a fork, and you're asked before anything is recorded.
 3. **📸 Snapshots before every change.** Before an update, install, or rollback writes anything, the current folder is copied to `skill-versions/snapshots/<skill>/<timestamp>/`, and the copy is verified. Then the new version is staged, swapped in, and validated. If validation fails, the old folder is put straight back.
 4. **🕰️ History both ways.** You can roll back to any snapshot this machine has had, or to any commit, tag, or `version:` ever published upstream.
-5. **⚡ Cheap fetching.** Repos are cloned as blobless mirrors into a private cache: commits and folder structure only, with file contents fetched only when needed. A 170-skill repo is about 2 MB and takes a second. Your own git clones are never touched.
+5. **⚡ Cheap fetching.** Repos are cloned blobless into a private cache: branches, tags, commits and folder structure only. File contents are fetched in one batch, and only for the skill being installed. A 170-skill repo is about 2 MB and takes a second. Checks, fingerprints and fetches run in parallel, so checking 200+ skills takes a few seconds. Your own git clones are never touched.
 
 ## 🛡️ Safety
 
 - ✅ **Local edits** are detected by fingerprint and never overwritten without your answer. When you do overwrite, the edits stay in a snapshot.
 - ✅ **New skills and updates** that add or change scripts, `allowed-tools`, or hooks are flagged for review.
-- ✅ **Upstream archives** are extracted with Python's `tarfile` "data" filter, which rejects paths and links that escape the skill folder.
+- ✅ **Upstream files** are written only inside the skill folder: absolute paths, `..`, and links that escape the folder stop the install.
 - ✅ **Symlinked skills** (your development copies) are never modified.
 - ✅ **Upstream history rewrites** (force-push, rebase, squash) are handled. The installed version is re-matched by fingerprint, and if it no longer exists upstream, the skill is treated as locally modified and replaced only when you agree.
 - ✅ **No password prompts.** Git never waits for a password: a private or missing repo fails at once and is reported as unreachable.
@@ -346,7 +346,7 @@ skillvm/
 
 - **Git sources only.** Skills distributed as zip files or single files can't be tracked. Non-GitHub git hosts work for install and update, but GitHub search only finds GitHub repos.
 - **Plugin-managed and built-in skills.** Skills that come with an agent's plugins, and Codex's `.system` skills, belong to that agent; update them through its own tools.
-- **Rate limits.** Unauthenticated GitHub search allows about 10 requests a minute. The skill paces itself, and stops cleanly if the limit is reached.
+- **Rate limits.** Unauthenticated GitHub search allows about 10 requests a minute (one search uses 5). The skill runs at full speed while the limit allows, waits when it runs out, and stops cleanly if the wait would be long. Set `GH_TOKEN` or `GITHUB_TOKEN` to raise the limit to 30 a minute. Repeat searches reuse what earlier ones read from repos that haven't changed since.
 - **Snapshots are local.** They live on this machine, and the 10 newest per skill are kept.
 
 ## 🙌 Contributing

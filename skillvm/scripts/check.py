@@ -23,6 +23,10 @@ def check(a, reg, skills_dir):
     rows, res = [], {"rematched": [], "lost": [], "up_to_date": [], "locally_modified": [], "pinned": [], "unknown_source": [],
                      "source_unreachable": [], "removed_upstream": [], "not_registered": []}
     unreachable = set()
+    # the slow parts, network and hashing folders, run in parallel up front
+    entries = {n: reg["skills"].get(lib.skill_key(skills_dir, n)) for n in targets}
+    lib.fetch_sources(reg, {e["source"] for e in entries.values() if e and e.get("source")}, a.no_fetch)
+    fps = lib.fingerprints(os.path.join(skills_dir, n) for n, e in entries.items() if e and e.get("source"))
     for name in targets:
         k = lib.skill_key(skills_dir, name)
         e = reg["skills"].get(k)
@@ -46,7 +50,7 @@ def check(a, reg, skills_dir):
         if state != "ok":
             res[state].append(name)
         latest_tree = lib.tree_at(cache, branch, e["path"])
-        modified = e.get("commit") is None or lib.fingerprint(folder) != e["fingerprint"]
+        modified = e.get("commit") is None or fps[folder] != e["fingerprint"]
         if not latest_tree:
             res["removed_upstream"].append(name)
             continue
@@ -125,12 +129,16 @@ def history(a, reg, skills_dir):
     lines = lib.git(*args).splitlines()
     print("%s · `%s` · newest first\n" % (e["source"], e["path"]))
     print("| Commit | Date | Version | Tags | Subject |\n|---|---|---|---|---|")
-    for l in lines:
-        c, d, subj = l.split(" ", 2)
-        tags = lib.git("-C", cache, "tag", "--points-at", c).split()
+    tags = {}
+    for l in lib.git("-C", cache, "for-each-ref", "refs/tags", "--format=%(objectname) %(*objectname) %(refname:short)").splitlines():
+        oid, peeled, tag = l.split(" ", 2)  # peeled is empty for lightweight tags
+        tags.setdefault(peeled or oid, []).append(tag)
+    rows = [l.split(" ", 2) for l in lines]
+    metas = lib.metas_at(cache, [(c, e["path"]) for c, _, _ in rows])
+    for (c, d, subj), m in zip(rows, metas):
         mark = " ← installed" if c == e.get("commit") and cur_fp == e.get("fingerprint") else ""
-        print("| `%s`%s | %s | %s | %s | %s |" % (c[:7], mark, d, lib.meta_at(cache, c, e["path"])["version"] or "—",
-                                                ", ".join(tags) or "", subj.replace("|", "\\|")))
+        print("| `%s`%s | %s | %s | %s | %s |" % (c[:7], mark, d, m["version"] or "—",
+                                                ", ".join(tags.get(c, [])), subj.replace("|", "\\|")))
     if e.get("commit") and e["commit"] not in " ".join(lines):
         print("\nInstalled: `%s` (older than the %d shown)" % (lib.short(e["commit"]), len(lines)))
 

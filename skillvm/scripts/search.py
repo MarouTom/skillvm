@@ -13,7 +13,7 @@ downloads only its SKILL.md files. Skills whose name or description match the to
 their repo's stars. Results are saved so `apply.py install --from-search 1 3` can install by number.
 """
 import argparse
-import concurrent.futures
+import datetime
 import json
 import os
 import re
@@ -81,7 +81,7 @@ def candidate_repos(query, collections):
 
 
 def read_skills(full_name, info, workdir):
-    """Shallow sparse clone with only SKILL.md files; return the skills it contains."""
+    """Shallow sparse clone with only SKILL.md files; return the skills it contains, or None if it failed."""
     dest = os.path.join(workdir, full_name.replace("/", "__"))
     url = "https://github.com/%s.git" % full_name
     try:
@@ -90,7 +90,8 @@ def read_skills(full_name, info, workdir):
                      ["-C", dest, "checkout", "-q"]):
             subprocess.run(["git", *args], capture_output=True, env=lib.GIT_ENV, timeout=90, check=True)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return []
+        shutil.rmtree(dest, ignore_errors=True)
+        return None
     files = subprocess.run(["git", "-C", dest, "ls-tree", "-r", "--name-only", "HEAD"],
                            capture_output=True, text=True, env=lib.GIT_ENV).stdout.splitlines()
     head = subprocess.run(["git", "-C", dest, "log", "-1", "--format=%h %cs"],
@@ -114,6 +115,43 @@ def read_skills(full_name, info, workdir):
                     "allowed_tools": meta["allowed-tools"], "scripts": len(code)})
     shutil.rmtree(dest, ignore_errors=True)
     return out
+
+
+def scan(repos, workdir):
+    """The skills in each repo. Repos not pushed to since an earlier search are read from the search index
+    instead of being cloned again; the popular collections show up in almost every search."""
+    p = os.path.join(lib.STORE, "cache", "search-index.json")
+    try:
+        with open(p) as f:
+            index = json.load(f)
+    except (OSError, ValueError):
+        index = {}
+    today = datetime.date.today().isoformat()
+
+    def one(kv):
+        full_name, info = kv
+        hit = index.get(full_name)
+        if hit and info["pushed"] and hit["pushed"] == info["pushed"]:
+            # stars and descriptions change without a push; take those from the fresh search result
+            return [dict(s, stars=info["stars"], query_hit=info["query_hit"], repo_about=info["about"],
+                         license=info["license"], branch=info["branch"], url=skill_url(full_name, info["branch"], s["path"]))
+                    for s in hit["skills"]]
+        skills = read_skills(full_name, info, workdir)
+        if skills is not None and info["pushed"]:
+            index[full_name] = {"pushed": info["pushed"], "skills": skills}
+        return skills or []
+
+    found = []
+    for (full_name, _), skills in zip(repos.items(), lib.parallel(one, repos.items(), workers=12)):
+        found += skills
+        if full_name in index:
+            index[full_name]["seen"] = today
+    cutoff = (datetime.date.today() - datetime.timedelta(days=60)).isoformat()
+    index = {k: v for k, v in index.items() if v.get("seen", today) >= cutoff}
+    with open(p + ".tmp", "w") as f:
+        json.dump(index, f)
+    os.replace(p + ".tmp", p)
+    return found
 
 
 def skill_url(repo, branch, path):
@@ -190,11 +228,8 @@ def main():
     repos, note = candidate_repos(query, a.collections)
     workdir = os.path.join(lib.STORE, "tmp", "search-%d" % os.getpid())
     os.makedirs(workdir, exist_ok=True)
-    found = []
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-            for skills in pool.map(lambda kv: read_skills(kv[0], kv[1], workdir), repos.items()):
-                found += skills
+        found = scan(repos, workdir)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

@@ -138,9 +138,12 @@ def main():
         m = lib.read_meta(folder)
         # links that look like a skill's own repo; a link to the library a skill documents is not a source
         hints = m["source_urls"] + [u for u in m["urls"] if "skill" in u.lower()] + readme_hints(folder)
-        info[name] = {"fingerprint": lib.fingerprint(folder), "version": m["version"], "author": m["author"],
+        info[name] = {"fingerprint": None, "version": m["version"], "author": m["author"],
                       "hints": list(dict.fromkeys(hints))}
         unresolved.append(name)
+    fps = lib.fingerprints(os.path.join(skills_dir, n) for n in unresolved)
+    for name in unresolved:
+        info[name]["fingerprint"] = fps[os.path.join(skills_dir, name)]
     gone = [k for k in reg["skills"] if "::" not in k and not os.path.lexists(os.path.join(skills_dir, k))
             and lib.skill_key(skills_dir, k) == k]
     for k in gone:
@@ -177,14 +180,19 @@ def main():
     urls = {lib.parse_ref(r)["key"]: lib.parse_ref(r)["url"] for r in a.repos}
     tried = set()
 
+    def url_for(key):
+        return urls.get(key) or reg["sources"].get(key, {}).get("url") or "https://github.com/%s.git" % key
+
     def run(key):
         if key in tried or not unresolved:
             return
         tried.add(key)
-        url = urls.get(key) or reg["sources"].get(key, {}).get("url") or "https://github.com/%s.git" % key
+        url = url_for(key)
         n = try_repo(reg, key, url, unresolved, info, skills_dir, local.get(key), report)
         report.setdefault("tried", []).append("%s: %d confirmed" % (key, n))
 
+    if unresolved:
+        lib.fetch_all({key: url_for(key) for key in queue})  # in parallel; the loop below then works offline
     for key in queue:
         run(key)
     for name in list(unresolved):

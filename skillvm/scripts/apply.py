@@ -84,6 +84,11 @@ def cmd_update(r):
         lib.die("no installed skill matches: " + "; ".join(missing))
     targets.sort(key=lambda n: n == "skillvm")  # update the updater last
     overwrite = set(r.a.overwrite_local or [])
+    # the slow parts, network and hashing folders, run in parallel up front
+    todo = {n: r.reg["skills"].get(r.key(n)) for n in targets}
+    todo = {n: e for n, e in todo.items() if e and e.get("source") and not e.get("pinned") and not os.path.islink(r.folder(n))}
+    lib.fetch_sources(r.reg, {e["source"] for e in todo.values()})
+    fps = lib.fingerprints(r.folder(n) for n in todo)
     for name in targets:
         e = r.reg["skills"].get(r.key(name))
         if e is None:
@@ -108,7 +113,7 @@ def cmd_update(r):
         if not latest_tree:
             r.skipped.append("%s (removed upstream)" % name)
             continue
-        cur_fp = lib.fingerprint(r.folder(name))
+        cur_fp = fps[r.folder(name)]
         modified = e.get("commit") is None or cur_fp != e["fingerprint"]
         if latest_tree == cur_fp:
             r.uptodate += 1
@@ -198,8 +203,8 @@ def cmd_rollback(r):
         if not commit:
             commit = lib.find_version(cache, branch, e["path"], target)
         if not commit:
-            versions = sorted({lib.meta_at(cache, c, e["path"])["version"] or "" for c in
-                               lib.git("-C", cache, "log", "-n", "40", "--format=%H", branch, "--", e["path"]).split()} - {""})
+            recent = lib.git("-C", cache, "log", "-n", "40", "--format=%H", branch, "--", e["path"]).split()
+            versions = sorted({m["version"] or "" for m in lib.metas_at(cache, [(c, e["path"]) for c in recent])} - {""})
             lib.die("no commit, tag or version '%s' for %s. Versions upstream: %s" % (target, name, ", ".join(versions) or "none recorded"))
 
     if snap:
@@ -258,6 +263,7 @@ def cmd_install_from_search(r):
     if r.a.ref or r.a.skills:
         lib.die("use either --from-search or a repo, not both")
     clashes = False
+    lib.fetch_all({results[n]["repo"]: "https://github.com/%s.git" % results[n]["repo"] for n in r.a.from_search})
     for n in dict.fromkeys(r.a.from_search):
         x = results[n]
         r.a.ref = x["url"] if x["path"] != "." else x["repo"]
@@ -285,10 +291,12 @@ def cmd_install(r, report=True):
     if ref["path"]:
         chosen = [ref["path"]] if ref["path"] in dirs else lib.die("no SKILL.md under %s in %s" % (ref["path"], ref["key"]))
     elif r.a.skills:
-        chosen, missing = [], []
+        chosen, missing, names = [], [], None
         for want in r.a.skills:
-            hit = [d for d in dirs if os.path.basename(d) == want] or \
-                  [d for d in dirs if lib.meta_at(cache, commit, d)["name"] == want]
+            hit = [d for d in dirs if os.path.basename(d) == want]
+            if not hit:
+                names = names or dict(zip(dirs, (m["name"] for m in lib.metas_at(cache, [(commit, d) for d in dirs]))))
+                hit = [d for d in dirs if names[d] == want]
             # prefer the shortest path when a repo carries copies for several agents
             (chosen.append(min(hit, key=lib.path_rank)) if hit else missing.append(want))
         if missing:
@@ -300,8 +308,8 @@ def cmd_install(r, report=True):
     else:
         print("## Skills in %s @ %s\n" % (ref["key"], rev))
         print("| Skill | Path | Version | Description |\n|---|---|---|---|")
-        for d in lib.preferred_dirs(dirs):
-            m = lib.meta_at(cache, commit, d)
+        listed = lib.preferred_dirs(dirs)
+        for d, m in zip(listed, lib.metas_at(cache, [(commit, d) for d in listed])):
             desc = (m["description"] or "").split(". ")[0][:90]
             print("| %s | `%s` | %s | %s |" % (os.path.basename(d) if d != "." else ref["key"].split("/")[-1], d,
                                             m["version"] or "—", desc.replace("|", "\\|")))

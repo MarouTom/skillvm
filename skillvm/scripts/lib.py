@@ -163,10 +163,24 @@ def parse_frontmatter(text):
         return meta
     parts = text.split("\n---", 1)
     fm = parts[0][3:] if len(parts) == 2 else ""
+    lines = fm.splitlines()
     for key in ("name", "description", "allowed-tools"):
-        m = re.search(r"^%s:\s*(.*)$" % re.escape(key), fm, re.M)
-        if m:
-            meta[key] = m.group(1).strip().strip("\"'") or None
+        for i, line in enumerate(lines):
+            m = re.match(r"^%s:\s*(.*)$" % re.escape(key), line)
+            if not m:
+                continue
+            value = m.group(1).strip()
+            if value in ("", "|", ">", "|-", ">-", "|+", ">+"):
+                # YAML block or plain multi-line value: the indented lines that follow
+                block = []
+                for nxt in lines[i + 1:]:
+                    if nxt.strip() and not nxt.startswith((" ", "\t")):
+                        break
+                    block.append(nxt.strip())
+                joiner = "\n" if value.startswith("|") else " "
+                value = joiner.join(block).strip()
+            meta[key] = value.strip("\"'") or None
+            break
     m = re.search(r"^\s*version:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", fm, re.M)
     meta["version"] = m.group(1) if m else None
     meta["hooks"] = bool(re.search(r"^hooks:", fm, re.M))

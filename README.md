@@ -11,7 +11,7 @@ Install, update, and roll back skills from GitHub, with proof of where each one 
 [![Dependencies](https://img.shields.io/badge/pip_dependencies-none-2EA44F?style=flat-square)](#-install)
 [![Version](https://img.shields.io/badge/version-1.0.0-0969DA?style=flat-square)](skillvm/SKILL.md)
 
-[Install](#-install) · [Use](#-use) · [Versions &amp; restore](#example-list-every-version-of-a-skill-then-restore-one) · [Example report](#-what-you-see) · [How it works](#-how-it-works) · [Safety](#-safety) · [Scripts](#-use-the-scripts-directly)
+[Install](#-install) · [Use](#-use) · [Find skills](#example-find-new-skills-learn-about-one-install-it) · [Versions &amp; restore](#example-list-every-version-of-a-skill-then-restore-one) · [Example report](#-what-you-see) · [How it works](#-how-it-works) · [Safety](#-safety) · [Scripts](#-use-the-scripts-directly)
 
 </div>
 
@@ -50,6 +50,20 @@ Local changes are detected by fingerprint and **never overwritten** without your
 
 </td>
 </tr>
+<tr>
+<td valign="top">
+
+### 🔎 Discovers new skills
+*"Find skills for data management"* searches GitHub, reads each candidate's `SKILL.md`, and shows the **top 10 by stars**, with links, licenses, and last updates. Pick numbers to install.
+
+</td>
+<td valign="top">
+
+### 🌍 Speaks your language
+Ask in any language. Results, descriptions, and explanations come back in yours, while names, links, and commands stay exact.
+
+</td>
+</tr>
 </table>
 
 ---
@@ -77,6 +91,7 @@ Just ask, in plain language:
 
 > 💭 *Check my skills for updates.*
 > 💭 *Update everything.* · *Update chart-maker and pdf-toolkit.* · *Update all the writing-\* skills.*
+> 💭 *Find skills for spreadsheet cleanup.* · *Tell me more about number 2.* · *Install 1 and 3.*
 > 💭 *Install the meeting-notes skill from acme-labs/agent-skills.*
 > 💭 *What changed in chart-maker?* · *Show me the previous versions of pdf-toolkit.*
 > 💭 *Undo the last update to sql-helper.* · *Go back to chart-maker 1.2.* · *Keep chart-maker at this version.*
@@ -84,6 +99,7 @@ Just ask, in plain language:
 Or pass arguments: `/skillvm …` in Claude Code, `$skillvm …` in Codex.
 
 ```
+--search "spreadsheet cleanup"            find skills on GitHub, top 10 by stars
 --check                                   what's outdated? changes nothing
 all                                       update everything (previews first, asks once)
 chart-maker pdf-toolkit                   update specific skills
@@ -152,6 +168,44 @@ Pick any row and ask for it. All of these work:
 > *Pin chart-maker at 1.1, so "update all" doesn't bring 1.4 back?*
 
 Say yes and the skill stays at 1.1 until you unpin it. Asking for a version that doesn't exist (*"go back to chart-maker 0.9"*) gets you the list of versions that do.
+
+### Example: find new skills, learn about one, install it
+
+> 💭 *Find skills for spreadsheet cleanup.*
+
+The skill searches GitHub (repos tagged `agent-skills` or `claude-skills`, plus the biggest skill collections), opens each candidate, and keeps the skills whose name or description match. The top 10 are ranked by stars:
+
+> **Skill search · "spreadsheet cleanup" · top 10 by GitHub stars**
+>
+> | # | Skill | What it does | Repo | ★ | Updated | Notes |
+> |---|---|---|---|---|---|---|
+> | 1 | **csv-wrangler** | Clean, deduplicate, and reshape CSV and Excel files. | acme-labs/agent-skills | 12,480 | 2026-10-14 | v2.1 · 3 scripts |
+> | 2 | **sheet-auditor** | Find broken formulas, mixed types, and outliers in spreadsheets. | jdoe/data-skills | 2,315 | 2026-09-30 | v1.0 |
+> | 3 | **tidy-tables** | Turn messy tables into tidy, analysis-ready data. | dataworks-lab/tidy-skills | 640 | 2026-08-12 | 1 script |
+> | … | | | | | | |
+>
+> **About each result**
+> 1. **csv-wrangler**: github.com/acme-labs/agent-skills/tree/main/skills/csv-wrangler
+>    - Repo: acme-labs/agent-skills · ★ 12,480 · MIT · last updated 2026-10-14 · Skills for everyday data work.
+> 2. **sheet-auditor**: …
+
+> 💭 *Tell me more about number 2.*
+
+> **sheet-auditor** checks a spreadsheet before you trust it: it finds formulas that return errors, columns that mix numbers and text, and values far outside the usual range, then explains each problem with its cell reference.
+>
+> **You could ask it:**
+> - *"Audit budget-2026.xlsx before I send it to finance."*
+> - *"Why does the total in column F not match the sum of the rows?"*
+> - *"List the outliers in the sales sheet and suggest which ones are typos."*
+>
+> **What it installs:** 4 files, no scripts, no special tool permissions.
+> **Source:** jdoe/data-skills · ★ 2,315 · MIT · last updated 2026-09-30
+
+> 💭 *Install 1 and 3.*
+
+Both are installed with the usual change report, snapshot, and ⚠ review flags. Results you already have are marked `installed`.
+
+**In your language:** ask *"Trouve des skills pour nettoyer des tableurs"* and the agent searches with English keywords (most skills are described in English), then answers in French. It translates the descriptions and use cases, and keeps skill names, links, and commands exactly as they are.
 
 ## 🧾 What you see
 
@@ -237,7 +291,7 @@ The skill's frontmatter uses only fields both agents accept, and it passes Codex
 
 ## 🧰 Use the scripts directly
 
-The skill is a thin layer over three scripts, which you can also run yourself.
+The skill is a thin layer over four scripts, which you can also run yourself.
 
 <details>
 <summary><b>Show commands</b></summary>
@@ -245,6 +299,9 @@ The skill is a thin layer over three scripts, which you can also run yourself.
 ```bash
 S=~/.claude/skills/skillvm/scripts      # or ~/.codex/skills/skillvm/scripts
 python3 $S/bootstrap.py --search                  # build the registry (safe to re-run)
+python3 $S/search.py "spreadsheet cleanup"        # find skills on GitHub, top 10 by stars
+python3 $S/search.py --details 2                  # everything about result 2
+python3 $S/apply.py install --from-search 1 3     # install results by number
 python3 $S/check.py                               # what's outdated?
 python3 $S/check.py --history chart-maker         # local snapshots + upstream versions
 python3 $S/check.py --diff chart-maker            # your local edits
@@ -276,6 +333,7 @@ skillvm/
 │   ├── lib.py             fingerprints, registry, fetching, snapshots, the report
 │   ├── bootstrap.py       find and confirm where installed skills came from
 │   ├── check.py           check for updates, version history, local diffs (read-only)
+│   ├── search.py          find skills on GitHub by topic, ranked by stars (read-only)
 │   └── apply.py           update, rollback, install, pin, unpin
 └── references/
     ├── sources.md         registry format and source resolution, step by step

@@ -4,6 +4,7 @@
   apply.py update [SKILL|GLOB ...|all] [--dry-run] [--overwrite-local SKILL ...]
   apply.py rollback SKILL [TARGET]       TARGET: snapshot id, date (YYYY-MM-DD), commit, tag, or version
   apply.py install REF [SKILL ...] [--all] [--replace] [--as NAME] [--dry-run]
+  apply.py install --from-search N [N ...]   install results of the last search.py run, by number
   apply.py pin SKILL [REF]               REF: commit or snapshot id (default: what's installed)
   apply.py unpin SKILL
 
@@ -243,7 +244,34 @@ def cmd_rollback(r):
 
 # --- install ----------------------------------------------------------------
 
-def cmd_install(r):
+def cmd_install_from_search(r):
+    """Install results of the last search.py run, by number."""
+    import json
+    p = os.path.join(lib.STORE, "last-search.json")
+    if not os.path.exists(p):
+        lib.die("no search yet: run search.py \"<topic>\" first")
+    with open(p) as f:
+        results = {x["n"]: x for x in json.load(f)["results"]}
+    missing = [n for n in r.a.from_search if n not in results]
+    if missing:
+        lib.die("no result %s in the last search (it has 1-%d)" % (", ".join(map(str, missing)), len(results)))
+    if r.a.ref or r.a.skills:
+        lib.die("use either --from-search or a repo, not both")
+    clashes = False
+    for n in dict.fromkeys(r.a.from_search):
+        x = results[n]
+        r.a.ref = x["url"] if x["path"] != "." else x["repo"]
+        r.a.skills = []
+        clashes |= cmd_install(r, report=False)
+    r.report("install")
+    if clashes:
+        sys.exit(NEEDS_DECISION)
+
+
+def cmd_install(r, report=True):
+    """Returns True when some skills were skipped because their folder name is taken."""
+    if not r.a.ref:
+        lib.die("give a repo to install from, or --from-search N")
     ref = lib.parse_ref(r.a.ref)
     cache, default = lib.fetch(ref["key"], ref["url"])
     rev = ref["ref"] or default
@@ -334,6 +362,8 @@ def cmd_install(r):
         r.skipped += ["%s (folder exists)" % c for c in clashes]
         r.decision.append("already installed from elsewhere: %s. Rerun with --replace (old folder is snapshotted) "
                           "or --as NEWNAME (one skill)." % ", ".join(clashes))
+    if not report:
+        return bool(clashes)
     r.report("install")
     if clashes:
         sys.exit(NEEDS_DECISION)
@@ -383,7 +413,8 @@ def main():
     rb.add_argument("skill")
     rb.add_argument("target", nargs="?")
     i = sub.add_parser("install")
-    i.add_argument("ref")
+    i.add_argument("ref", nargs="?")
+    i.add_argument("--from-search", nargs="+", type=int, metavar="N", help="install results of the last search.py run")
     i.add_argument("skills", nargs="*")
     i.add_argument("--all", action="store_true")
     i.add_argument("--replace", action="store_true")
@@ -403,7 +434,8 @@ def main():
         lib.die("no registry yet; run bootstrap.py first")
     reg = lib.load_registry()
     r = Run(a, reg, skills_dir)
-    {"update": cmd_update, "rollback": cmd_rollback, "install": cmd_install,
+    {"update": cmd_update, "rollback": cmd_rollback,
+     "install": cmd_install_from_search if getattr(a, "from_search", None) else cmd_install,
      "pin": lambda r: cmd_pin(r, True), "unpin": lambda r: cmd_pin(r, False)}[a.cmd](r)
     if r.decision and a.cmd == "update":
         sys.exit(NEEDS_DECISION)

@@ -7,8 +7,8 @@ A skill folder doesn't say where it came from, so the updater keeps that in a re
 Variables used below:
 
 ```bash
-STORE="$HOME/.claude/skill-versions"
-SKILLS="$HOME/.claude/skills"
+SKILLS="$HOME/.claude/skills"           # or ~/.codex/skills, ~/.agents/skills: the folder being managed
+STORE="$(dirname "$SKILLS")/skill-versions"
 ```
 
 ## Registry format
@@ -65,7 +65,7 @@ Edit the registry with a small `python3 -c` or `jq` call so the JSON stays valid
 |---|---|---|---|
 | `git` | A git remote (GitHub, GitLab, etc.) | yes | yes (commits and tags) |
 | `local` | A folder on disk, such as the user's own drafts | yes (copy) | local snapshots only |
-| `plugin` | A skill bundled in a Claude Code plugin | report only | report only |
+| `plugin` | A skill bundled in an agent plugin (Claude Code, Codex) | report only | report only |
 | `null` | Unknown | no | local snapshots only |
 
 ### `git` sources
@@ -121,7 +121,7 @@ The source folder *is* the latest version. Compare its fingerprint with the inst
 
 ### `plugin` sources
 
-Skills under `~/.claude/plugins/` belong to the plugin manager. Don't write to those folders. Report each plugin skill's plugin name and tell the user to update it through the plugin manager (`/plugin` in an interactive Claude Code terminal, or `claude plugin --help` for the CLI form).
+Skills inside an agent's plugin folders (such as `~/.claude/plugins/`) and Codex's built-in `~/.codex/skills/.system/` belong to that agent. Don't write to those folders. Report the skill, and tell the user to update it through that agent's own plugin or skill manager.
 
 ## Finding the skill's path inside a repo
 
@@ -130,7 +130,7 @@ Skills under `~/.claude/plugins/` belong to the plugin manager. Don't write to t
    ```bash
    git -C "$CACHE" ls-tree -r --name-only "$BRANCH" | grep '/SKILL.md$\|^SKILL.md$' | sed 's#/\{0,1\}SKILL.md$##'
    ```
-   Prefer a folder whose last path segment equals the installed folder name. When a repo keeps copies of a skill for several agents (`.agents/skills/x`, `.claude/skills/x`, `skills/x`, …), prefer `.claude/`, then `skills/`, then any other non-hidden folder, then hidden ones. If none matches, read each candidate's `name:` field (`git -C "$CACHE" show "$BRANCH:$p/SKILL.md" | head -20`) and match on that.
+   Prefer a folder whose last path segment equals the installed folder name. When a repo keeps copies of a skill for several agents (`.agents/skills/x`, `.claude/skills/x`, `skills/x`, …), prefer the copy for the agent being managed (`.claude/` for Claude Code; `.codex/`, then `.agents/` for Codex), then `skills/`, then any other non-hidden folder, then other hidden ones. If none matches, read each candidate's `name:` field (`git -C "$CACHE" show "$BRANCH:$p/SKILL.md" | head -20`) and match on that.
 3. If there are several matches or none, ask the user. Don't guess.
 4. If the skill used to exist but is gone at `$BRANCH`, report it as `removed upstream` and leave the installed copy alone.
 

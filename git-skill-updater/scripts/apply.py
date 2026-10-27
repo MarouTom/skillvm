@@ -350,7 +350,7 @@ def cmd_pin(r, pin):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--skills-dir", default=lib.DEFAULT_SKILLS)
+    lib.add_common_args(ap)
     sub = ap.add_subparsers(dest="cmd", required=True)
     u = sub.add_parser("update")
     u.add_argument("skills", nargs="*")
@@ -373,7 +373,7 @@ def main():
         x.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     a.dry_run = getattr(a, "dry_run", False)
-    skills_dir = os.path.abspath(os.path.expanduser(a.skills_dir))
+    skills_dir = lib.setup(a)
     lib.ensure_store()
     if a.cmd != "install" and not os.path.exists(lib.registry_path()):
         lib.die("no registry yet; run bootstrap.py first")

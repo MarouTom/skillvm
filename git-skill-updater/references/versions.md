@@ -10,8 +10,8 @@ Two kinds of version history exist for a skill:
 Variables:
 
 ```bash
-STORE="$HOME/.claude/skill-versions"
-SKILLS="$HOME/.claude/skills"
+SKILLS="$HOME/.claude/skills"           # or ~/.codex/skills, ~/.agents/skills: the folder being managed
+STORE="$(dirname "$SKILLS")/skill-versions"
 NAME=<skill folder name>
 ```
 

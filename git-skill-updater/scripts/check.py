@@ -156,11 +156,11 @@ def main():
     ap.add_argument("--history", metavar="SKILL")
     ap.add_argument("--diff", metavar="SKILL", help="show local edits against the installed upstream version")
     ap.add_argument("-n", type=int, default=20, help="upstream versions to list (default 20)")
-    ap.add_argument("--skills-dir", default=lib.DEFAULT_SKILLS)
+    lib.add_common_args(ap)
     ap.add_argument("--no-fetch", action="store_true", help="use the cache as is (offline)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
-    skills_dir = os.path.abspath(os.path.expanduser(a.skills_dir))
+    skills_dir = lib.setup(a)
     if not os.path.exists(lib.registry_path()):
         lib.die("no registry yet; run bootstrap.py first")
     lib.ensure_store()

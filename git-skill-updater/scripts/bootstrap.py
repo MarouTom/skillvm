@@ -89,7 +89,7 @@ def try_repo(reg, key, url, unresolved, info, skills_dir, local_clone=None, repo
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("repos", nargs="*", help="extra candidate repos (owner/repo or URL)")
-    ap.add_argument("--skills-dir", default=lib.DEFAULT_SKILLS)
+    lib.add_common_args(ap)
     ap.add_argument("--search", action="store_true", help="search GitHub by author for unresolved skills")
     ap.add_argument("--max-groups", type=int, default=8, help="author groups to search (default 8)")
     ap.add_argument("--accept-likely", nargs="+", metavar="SKILL", help="record these likely candidates")
@@ -97,7 +97,7 @@ def main():
     ap.add_argument("--json", action="store_true", help="print the summary as JSON")
     a = ap.parse_args()
 
-    skills_dir = os.path.abspath(os.path.expanduser(a.skills_dir))
+    skills_dir = lib.setup(a)
     if not os.path.isdir(skills_dir):
         lib.die("no skills folder at %s" % skills_dir)
     lib.ensure_store()
@@ -159,10 +159,19 @@ def main():
         lib.save_registry(reg)
         return
 
-    # 2. candidates in order of trust: markers, user-named, already-known sources, frontmatter/README hints
+    # 2. candidates in order of trust: markers, user-named, already-known sources (this store, then the
+    #    stores of the user's other agents), frontmatter/README hints
     marker_repos, local = read_markers(skills_dir)
+    other = []
+    for home in sorted({lib.CLAUDE_HOME, lib.CODEX_HOME, os.path.join(lib.HOME, ".agents")}):
+        p = os.path.join(home, "skill-versions", "registry.json")
+        if os.path.exists(p) and os.path.dirname(os.path.dirname(p)) != os.path.dirname(lib.STORE):
+            try:
+                other += [k for k, v in json.load(open(p)).get("sources", {}).items() if v.get("type") == "git"]
+            except ValueError:
+                pass
     queue = []
-    for key in marker_repos + [lib.parse_ref(r)["key"] for r in a.repos] + list(reg["sources"]):
+    for key in marker_repos + [lib.parse_ref(r)["key"] for r in a.repos] + list(reg["sources"]) + other:
         if key not in queue:
             queue.append(key)
     urls = {lib.parse_ref(r)["key"]: lib.parse_ref(r)["url"] for r in a.repos}

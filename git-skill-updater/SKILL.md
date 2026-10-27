@@ -1,10 +1,10 @@
 ---
 name: git-skill-updater
-description: Installs Claude skills from GitHub and keeps them up to date. It finds where already-installed skills came from, updates them to their latest upstream version, checks which have updates, lists a skill's previous versions, and rolls back or pins a skill to an older version. Works on all skills or on named ones. Use when the user asks to install, add, update, upgrade, refresh, check for updates, downgrade, roll back, restore, pin, or browse the version history of skills (e.g. "install skills from github.com/owner/repo", "update my skills", "update chart-maker and pdf-toolkit", "what changed in chart-maker", "go back to the previous version of pdf-toolkit").
-argument-hint: "[all | <skill>...] [--check] [--install <github-url> [<skill>...]] [--history <skill>] [--rollback <skill> [<version>]] [--pin <skill> [<version>]] [--unpin <skill>]"
+description: Installs agent skills (Claude Code, Codex) from GitHub and keeps them up to date. Finds where already-installed skills came from, checks for updates, updates all or named skills, lists previous versions, and rolls back or pins a skill to an older version. Use when the user asks to install, add, update, upgrade, check for updates, downgrade, roll back, restore, pin, or browse the version history of skills, e.g. "install skills from github.com/owner/repo", "update my skills", "what changed in chart-maker", "go back to the previous version of pdf-toolkit".
 allowed-tools: Read Bash Glob Grep
 metadata:
   version: "1.0.0"
+  short-description: "Install, update, and roll back skills from GitHub"
   source: "https://github.com/MarouTom/git-skill-updater"
 ---
 
@@ -26,7 +26,25 @@ GSU="python3 <this skill's folder>/scripts"   # use the absolute path of the fol
 
 Each script takes `--help`. Exit code `0` means done, `1` means error (message on stderr), and `2` means the user has to decide something: the output ends with a `NEEDS DECISION:` line saying what.
 
+### Which agent's skills
+
+The scripts manage the skills folder this skill is installed in, and keep their state next to it:
+
+| Installed in | Manages | State |
+|---|---|---|
+| `~/.claude/skills/` (Claude Code) | `~/.claude/skills/` | `~/.claude/skill-versions/` |
+| `~/.codex/skills/` (Codex; `$CODEX_HOME/skills`) | `~/.codex/skills/` | `~/.codex/skill-versions/` |
+| `~/.agents/skills/` | `~/.agents/skills/` | `~/.agents/skill-versions/` |
+
+To manage another agent's skills, add `--agent claude`, `--agent codex` or `--agent agents`. For a project's skills, add `--skills-dir <repo>/.claude/skills` (or `<repo>/.codex/skills`). With `apply.py`, these options go *before* the subcommand: `apply.py --agent codex update all`. Hidden folders, such as Codex's built-in `.system` skills, are never touched.
+
+### Sandboxes and approvals
+
+Fetching from GitHub needs network access, and updating writes to the skills folder, which is usually outside the current workspace. In a sandboxed agent such as Codex, these commands may be blocked until the user approves them. If a command fails because of the sandbox (no network, or permission denied outside the workspace), ask for approval and re-run it. Don't try to work around the sandbox. `check.py --no-fetch` works offline from the cache.
+
 ## 1. Map the request to a command
+
+The user may pass arguments after the skill's name (`/git-skill-updater --check` in Claude Code, `$git-skill-updater --check` in Codex), or just ask in plain words.
 
 | User wants | Command |
 |---|---|
@@ -39,7 +57,7 @@ Each script takes `--help`. Exit code `0` means done, `1` means error (message o
 | "keep X at this version", `--pin X [v]` | `$GSU/apply.py pin X [v]` |
 | "start updating X again", `--unpin X` | `$GSU/apply.py unpin X` |
 
-Skill names can be folder names, `name:` values, or globs (`'writing-*'`, quoted). For the project's skills instead of the personal ones, add `--skills-dir <repo>/.claude/skills`. With `apply.py` it goes *before* the subcommand: `apply.py --skills-dir D update all`.
+Skill names can be folder names, `name:` values, or globs (`'writing-*'`, quoted).
 
 ## 2. First run: build the registry
 
@@ -106,4 +124,4 @@ How it works underneath, for debugging or for working without the scripts:
 - [references/sources.md](references/sources.md): the registry format, how sources are found and confirmed, and the GitHub search.
 - [references/versions.md](references/versions.md): fingerprints, the snapshot layout, staging and swapping, the history log, and retention.
 
-State lives in `~/.claude/skill-versions/`, or wherever `GSU_STORE` points.
+State lives in `skill-versions/` next to the managed skills folder (see "Which agent's skills"), or wherever `GSU_STORE` points.

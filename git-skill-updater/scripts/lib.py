@@ -1,6 +1,11 @@
 """Shared logic for git-skill-updater. Standard library only (Python 3.8+).
 
-Layout of the version store (default ~/.claude/skill-versions, override with GSU_STORE):
+Works for any agent that loads SKILL.md folders (Claude Code, Codex, ...). The skills folder defaults to the
+one this skill is installed in, so a copy in ~/.codex/skills manages Codex skills and a copy in ~/.claude/skills
+manages Claude skills. Each agent home gets its own version store next to its skills folder
+(~/.claude/skill-versions, ~/.codex/skill-versions, ...); GSU_STORE overrides it.
+
+Layout of the version store:
   registry.json   where each skill comes from and which commit is installed
   history.jsonl   one line per change
   snapshots/      copies of skill folders taken before every change
@@ -21,8 +26,64 @@ import time
 import urllib.parse
 
 HOME = os.path.expanduser("~")
-STORE = os.path.abspath(os.environ.get("GSU_STORE", os.path.join(HOME, ".claude", "skill-versions")))
-DEFAULT_SKILLS = os.path.join(HOME, ".claude", "skills")
+CLAUDE_HOME = os.path.abspath(os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
+CODEX_HOME = os.path.abspath(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"))
+AGENT_SKILLS = {
+    "claude": os.path.join(CLAUDE_HOME, "skills"),
+    "codex": os.path.join(CODEX_HOME, "skills"),
+    "agents": os.path.join(HOME, ".agents", "skills"),  # shared folder some agents also read
+}
+
+
+def _installed_skills_dir():
+    """The skills folder this copy of the skill lives in, if it lives in one."""
+    skill_folder = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    parent = os.path.dirname(skill_folder)
+    return parent if os.path.basename(parent) == "skills" else None
+
+
+DEFAULT_SKILLS = os.path.abspath(os.path.expanduser(
+    os.environ.get("GSU_SKILLS_DIR") or _installed_skills_dir() or AGENT_SKILLS["claude"]))
+# Keys in the registry are bare folder names for the store's own skills folder, "<folder>::<name>" for others.
+HOME_SKILLS = DEFAULT_SKILLS
+STORE = None
+PREFERRED = (".claude",)  # agent folders to prefer when a repo has one copy of a skill per agent
+
+
+def store_for(skills_dir):
+    """Version store for a skills folder: next to it inside an agent home, else ~/.claude/skill-versions."""
+    parent = os.path.dirname(os.path.abspath(skills_dir))
+    homes = {CLAUDE_HOME, CODEX_HOME, os.path.join(HOME, ".agents")}
+    return os.path.join(parent if parent in homes else CLAUDE_HOME, "skill-versions")
+
+
+def add_common_args(ap):
+    ap.add_argument("--skills-dir", help="skills folder to manage (default: the one this skill is installed in, "
+                                         "currently %s)" % DEFAULT_SKILLS.replace(HOME, "~"))
+    ap.add_argument("--agent", choices=sorted(AGENT_SKILLS), help="manage this agent's skills folder: "
+                    + ", ".join("%s=%s" % (k, v.replace(HOME, "~")) for k, v in sorted(AGENT_SKILLS.items())))
+
+
+def setup(a):
+    """Pick the skills folder and version store from parsed args. Returns the skills folder."""
+    global STORE, HOME_SKILLS, PREFERRED
+    if a.skills_dir and a.agent:
+        die("use --skills-dir or --agent, not both")
+    skills_dir = os.path.abspath(os.path.expanduser(a.skills_dir or AGENT_SKILLS.get(a.agent) or DEFAULT_SKILLS))
+    tail = os.path.basename(os.path.dirname(skills_dir))
+    if skills_dir.startswith(CODEX_HOME + os.sep) or tail == ".codex":
+        PREFERRED = (".codex", ".agents")
+    elif tail == ".agents":
+        PREFERRED = (".agents", ".codex")
+    if os.environ.get("GSU_STORE"):
+        STORE = os.path.abspath(os.path.expanduser(os.environ["GSU_STORE"]))
+    else:
+        STORE = store_for(skills_dir)
+        if os.path.dirname(STORE) == os.path.dirname(skills_dir):
+            HOME_SKILLS = skills_dir
+        else:
+            HOME_SKILLS = os.path.join(os.path.dirname(STORE), "skills")
+    return skills_dir
 FP_EXCLUDES = ".DS_Store\n__pycache__/\n*.pyc\n.pytest_cache/\n"
 KEEP_SNAPSHOTS = 10
 CODE_EXT = (".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".ps1", ".bat", ".exe")
@@ -52,8 +113,12 @@ def ensure_store():
     open(os.path.join(STORE, "history.jsonl"), "a").close()
 
 
+# Never let git wait for a username/password (private or missing repos): fail fast instead.
+GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", GIT_ASKPASS="echo")
+
+
 def git(*args, inp=None, check=True, binary=False):
-    r = subprocess.run(["git", *args], input=inp, capture_output=True, text=not binary)
+    r = subprocess.run(["git", *args], input=inp, capture_output=True, text=not binary, env=GIT_ENV)
     if check and r.returncode:
         err = r.stderr if not binary else r.stderr.decode("utf-8", "replace")
         raise GitError("git %s: %s" % (" ".join(args[:3]), err.strip()))
@@ -90,7 +155,8 @@ def fingerprint(folder):
 
 
 def parse_frontmatter(text):
-    meta = {"name": None, "description": None, "version": None, "allowed-tools": None, "hooks": False, "urls": []}
+    meta = {"name": None, "description": None, "version": None, "allowed-tools": None, "hooks": False,
+            "author": None, "urls": [], "source_urls": []}
     if not text.startswith("---"):
         return meta
     parts = text.split("\n---", 1)
@@ -102,7 +168,6 @@ def parse_frontmatter(text):
     m = re.search(r"^\s*version:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", fm, re.M)
     meta["version"] = m.group(1) if m else None
     meta["hooks"] = bool(re.search(r"^hooks:", fm, re.M))
-    meta["author"] = None
     m = re.search(r"^\s*(?:skill-author|author):\s*[\"']?([^\"'\n]+?)[\"']?\s*$", fm, re.M)
     if m:
         meta["author"] = m.group(1)
@@ -157,7 +222,7 @@ def save_registry(reg):
 
 
 def skill_key(skills_dir, name):
-    if os.path.abspath(skills_dir) == os.path.abspath(DEFAULT_SKILLS):
+    if os.path.abspath(skills_dir) == os.path.abspath(HOME_SKILLS):
         return name
     return "%s::%s" % (os.path.abspath(skills_dir), name)
 
@@ -276,9 +341,13 @@ def skill_dirs(cache, rev):
 
 
 def path_rank(path):
-    """Prefer the Claude copy when a repo carries one skill for several agents."""
+    """When a repo carries one skill for several agents, prefer the managed agent's copy."""
     p = "/" + path
-    return (0 if "/.claude/" in p else 1 if p.startswith("/skills/") else 2 if not p.startswith("/.") else 3, len(path))
+    for i, agent in enumerate(PREFERRED):
+        if "/%s/" % agent in p:
+            return (i, len(path))
+    n = len(PREFERRED)
+    return (n if p.startswith("/skills/") else n + 1 if not p.startswith("/.") else n + 2, len(path))
 
 
 def preferred_dirs(dirs):
@@ -448,7 +517,7 @@ def stage_upstream(cache, commit, path, name):
     shutil.rmtree(new, ignore_errors=True)
     os.makedirs(stage)
     args = ["git", "-C", cache, "archive", "--format=tar", commit] + ([path] if gp(path) else [])
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=GIT_ENV)
     try:
         _extract(proc.stdout, stage)
     finally:
@@ -630,8 +699,8 @@ def render_report(kind, mode, rows, not_changed, footer=None):
     if footer is None and kind == "changes" and not rows:
         footer = ""
     if footer is None:
-        footer = ("Undo any row with `/git-skill-updater --rollback <skill>`. Changes take effect in a new session."
-                  if kind == "changes" else "Nothing applied. Update with `/git-skill-updater <skill>...` or `/git-skill-updater all`.")
+        footer = ("Undo any row by asking to roll that skill back. Changes take effect in a new session."
+                  if kind == "changes" else "Nothing applied. Ask to update specific skills, or all of them.")
     if footer:
         out.append(footer)
     return "\n".join(out).rstrip() + "\n"

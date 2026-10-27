@@ -1,9 +1,9 @@
-"""Shared logic for git-skill-updater. Standard library only (Python 3.8+).
+"""Shared logic for skillvm. Standard library only (Python 3.8+).
 
 Works for any agent that loads SKILL.md folders (Claude Code, Codex, ...). The skills folder defaults to the
 one this skill is installed in, so a copy in ~/.codex/skills manages Codex skills and a copy in ~/.claude/skills
 manages Claude skills. Each agent home gets its own version store next to its skills folder
-(~/.claude/skill-versions, ~/.codex/skill-versions, ...); GSU_STORE overrides it.
+(~/.claude/skill-versions, ~/.codex/skill-versions, ...); SKILLVM_STORE overrides it.
 
 Layout of the version store:
   registry.json   where each skill comes from and which commit is installed
@@ -43,7 +43,7 @@ def _installed_skills_dir():
 
 
 DEFAULT_SKILLS = os.path.abspath(os.path.expanduser(
-    os.environ.get("GSU_SKILLS_DIR") or _installed_skills_dir() or AGENT_SKILLS["claude"]))
+    os.environ.get("SKILLVM_SKILLS_DIR") or _installed_skills_dir() or AGENT_SKILLS["claude"]))
 # Keys in the registry are bare folder names for the store's own skills folder, "<folder>::<name>" for others.
 HOME_SKILLS = DEFAULT_SKILLS
 STORE = None
@@ -75,9 +75,9 @@ def setup(a):
         PREFERRED = (".codex", ".agents")
     elif tail == ".agents":
         PREFERRED = (".agents", ".codex")
-    if os.environ.get("GSU_STORE"):
+    if os.environ.get("SKILLVM_STORE"):
         # a custom store belongs to the skills folder it is used with, so a copied or moved store keeps working
-        STORE = os.path.abspath(os.path.expanduser(os.environ["GSU_STORE"]))
+        STORE = os.path.abspath(os.path.expanduser(os.environ["SKILLVM_STORE"]))
         HOME_SKILLS = skills_dir
     else:
         STORE = store_for(skills_dir)
@@ -469,7 +469,7 @@ def gh_search(kind, q, per_page=3):
     url = "https://api.github.com/search/%s?q=%s&per_page=%d%s" % (
         kind, urllib.parse.quote(q), per_page, "&sort=stars" if kind == "repositories" else "")
     r = subprocess.run(["curl", "-sS", "--max-time", "20", "-H", "Accept: application/vnd.github+json",
-                        "-A", "git-skill-updater", "-w", "\n%{http_code}", url], capture_output=True, text=True)
+                        "-A", "skillvm", "-w", "\n%{http_code}", url], capture_output=True, text=True)
     body, _, code = r.stdout.rpartition("\n")
     if code in ("403", "429"):
         raise UserError("GitHub search rate limit reached; try again in a minute")

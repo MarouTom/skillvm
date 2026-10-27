@@ -1,0 +1,4 @@
+interface:
+  display_name: "skillvm"
+  short_description: "Install, update, and roll back skills from GitHub"
+  default_prompt: "Use $skillvm to check my installed skills for updates."

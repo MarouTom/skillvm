@@ -1,14 +1,15 @@
 <div align="center">
 
-# 🔄 git-skill-updater
+# 🔄 skillvm
 
-**Install, update, and roll back agent skills from GitHub,<br>with proof of where each one came from.**
+**The version manager for agent skills.**<br>
+Install, update, and roll back skills from GitHub, with proof of where each one came from.
 
 [![Claude Code](https://img.shields.io/badge/Claude_Code-skill-D97757?style=flat-square)](#-install)
 [![Codex](https://img.shields.io/badge/Codex-skill-10A37F?style=flat-square)](#-install)
 [![Python](https://img.shields.io/badge/python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white)](#-install)
 [![Dependencies](https://img.shields.io/badge/pip_dependencies-none-2EA44F?style=flat-square)](#-install)
-[![Version](https://img.shields.io/badge/version-1.0.0-0969DA?style=flat-square)](git-skill-updater/SKILL.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-0969DA?style=flat-square)](skillvm/SKILL.md)
 
 [Install](#-install) · [Use](#-use) · [Versions &amp; restore](#example-list-every-version-of-a-skill-then-restore-one) · [Example report](#-what-you-see) · [How it works](#-how-it-works) · [Safety](#-safety) · [Scripts](#-use-the-scripts-directly)
 
@@ -18,7 +19,7 @@
 
 You've probably installed skills by copying folders from GitHub repos into `~/.claude/skills/` or `~/.codex/skills/`. From then on, nothing tracks them. You can't tell which version you have, whether there's a newer one, or whether you've edited it. And once you've copied a new version over, the old one is gone.
 
-**git-skill-updater** is a skill for **Claude Code** and **Codex** that takes care of this. Ask your agent *"update my skills"*, and it handles the rest. It works with the skills you already have, so there's nothing to reinstall.
+**skillvm** is a skill for **Claude Code** and **Codex** that takes care of this. Think `nvm` or `pyenv`, but for agent skills. Ask your agent *"update my skills"*, and it handles the rest. It works with the skills you already have, so there's nothing to reinstall.
 
 <table>
 <tr>
@@ -56,15 +57,15 @@ Local changes are detected by fingerprint and **never overwritten** without your
 ## 📦 Install
 
 ```bash
-git clone --depth 1 https://github.com/MarouTom/git-skill-updater.git /tmp/git-skill-updater
+git clone --depth 1 https://github.com/MarouTom/skillvm.git /tmp/skillvm
 ```
 
 Then copy the skill into the skills folder of each agent you use.
 
 | Agent | Command | Invoke with |
 |---|---|---|
-| **Claude Code** | `cp -R /tmp/git-skill-updater/git-skill-updater ~/.claude/skills/` | `/git-skill-updater` |
-| **Codex** | `cp -R /tmp/git-skill-updater/git-skill-updater ~/.codex/skills/` | `$git-skill-updater` |
+| **Claude Code** | `cp -R /tmp/skillvm/skillvm ~/.claude/skills/` | `/skillvm` |
+| **Codex** | `cp -R /tmp/skillvm/skillvm ~/.codex/skills/` | `$skillvm` |
 
 If you've set `CODEX_HOME`, copy into `$CODEX_HOME/skills` instead. Start a new session afterwards. Each copy manages the skills of the agent it's installed in, and can update itself along with them.
 
@@ -80,7 +81,7 @@ Just ask, in plain language:
 > 💭 *What changed in chart-maker?* · *Show me the previous versions of pdf-toolkit.*
 > 💭 *Undo the last update to sql-helper.* · *Go back to chart-maker 1.2.* · *Keep chart-maker at this version.*
 
-Or pass arguments: `/git-skill-updater …` in Claude Code, `$git-skill-updater …` in Codex.
+Or pass arguments: `/skillvm …` in Claude Code, `$skillvm …` in Codex.
 
 ```
 --check                                   what's outdated? changes nothing
@@ -242,7 +243,7 @@ The skill is a thin layer over three scripts, which you can also run yourself.
 <summary><b>Show commands</b></summary>
 
 ```bash
-S=~/.claude/skills/git-skill-updater/scripts      # or ~/.codex/skills/git-skill-updater/scripts
+S=~/.claude/skills/skillvm/scripts      # or ~/.codex/skills/skillvm/scripts
 python3 $S/bootstrap.py --search                  # build the registry (safe to re-run)
 python3 $S/check.py                               # what's outdated?
 python3 $S/check.py --history chart-maker         # local snapshots + upstream versions
@@ -259,7 +260,7 @@ Each script takes `--help`. Exit code `2` means a decision is needed; the output
 - **Another agent's skills.** Pass `--agent claude|codex|agents`.
 - **Project skills, or any other folder.** Pass `--skills-dir <repo>/.claude/skills` (or `.codex/skills`). The scripts work with any folder of `SKILL.md` skills.
 - With `apply.py`, these options go before the subcommand: `apply.py --agent codex update all`.
-- **Separate state.** Set `GSU_STORE=/some/folder` to keep the registry and snapshots somewhere else, for example for testing.
+- **Separate state.** Set `SKILLVM_STORE=/some/folder` to keep the registry and snapshots somewhere else, for example for testing.
 
 </details>
 
@@ -267,7 +268,7 @@ Each script takes `--help`. Exit code `2` means a decision is needed; the output
 <summary><b>Repository layout</b></summary>
 
 ```
-git-skill-updater/
+skillvm/
 ├── SKILL.md               what the agent follows: which script to run, and how to handle decisions
 ├── agents/
 │   └── openai.yaml        Codex display metadata
@@ -295,5 +296,5 @@ git-skill-updater/
 Issues and pull requests are welcome. To test changes without touching your real skills, point both the skills folder and the state folder at a scratch copy:
 
 ```bash
-GSU_STORE=/tmp/gsu-test python3 git-skill-updater/scripts/bootstrap.py --skills-dir /tmp/test-skills --search
+SKILLVM_STORE=/tmp/skillvm-test python3 skillvm/scripts/bootstrap.py --skills-dir /tmp/test-skills --search
 ```

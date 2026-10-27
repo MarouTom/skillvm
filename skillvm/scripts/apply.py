@@ -81,7 +81,7 @@ def cmd_update(r):
     targets, missing = lib.resolve_targets(r.a.skills, r.skills_dir)
     if missing:
         lib.die("no installed skill matches: " + "; ".join(missing))
-    targets.sort(key=lambda n: n == "git-skill-updater")  # update the updater last
+    targets.sort(key=lambda n: n == "skillvm")  # update the updater last
     overwrite = set(r.a.overwrite_local or [])
     for name in targets:
         e = r.reg["skills"].get(r.key(name))

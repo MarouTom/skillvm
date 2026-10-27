@@ -1,4 +1,0 @@
-interface:
-  display_name: "Git Skill Updater"
-  short_description: "Install, update, and roll back skills from GitHub"
-  default_prompt: "Use $git-skill-updater to check my installed skills for updates."

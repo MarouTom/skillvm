@@ -65,6 +65,17 @@ From and To are `version · commit · date`, and `—` means the skill has no `v
 
 ## Install
 
+### As a Claude Code plugin
+
+```bash
+claude plugin marketplace add MarouTom/skillvm
+claude plugin install skillvm@skillvm
+```
+
+Invoke it with `/skillvm:skillvm`, and get new versions with `claude plugin update skillvm@skillvm`.
+
+### As a skill folder (Claude Code and Codex)
+
 ```bash
 git clone --depth 1 https://github.com/MarouTom/skillvm.git /tmp/skillvm
 ```

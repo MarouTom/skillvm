@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code plugin packaging: `.claude-plugin/plugin.json` and a `marketplace.json`, so the repo can be installed with `claude plugin install skillvm@skillvm`.
+
 ## [1.0.0] - 2026-10-27
 
 First public release.

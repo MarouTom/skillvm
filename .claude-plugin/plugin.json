@@ -1,0 +1,15 @@
+{
+  "name": "skillvm",
+  "displayName": "skillvm",
+  "version": "1.0.0",
+  "description": "Version manager for agent skills: install, update, and roll back Claude Code and Codex skills from GitHub, with proof of where each one came from.",
+  "author": {
+    "name": "MarouTom",
+    "url": "https://github.com/MarouTom"
+  },
+  "homepage": "https://github.com/MarouTom/skillvm",
+  "repository": "https://github.com/MarouTom/skillvm",
+  "license": "MIT",
+  "keywords": ["skills", "version-manager", "updates", "rollback", "github", "codex"],
+  "skills": ["./skillvm"]
+}

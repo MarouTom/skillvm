@@ -1,0 +1,13 @@
+{
+  "name": "skillvm",
+  "owner": {
+    "name": "MarouTom"
+  },
+  "plugins": [
+    {
+      "name": "skillvm",
+      "source": "./",
+      "description": "Install, update, and roll back agent skills from GitHub"
+    }
+  ]
+}
